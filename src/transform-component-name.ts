@@ -332,17 +332,23 @@ export function transformComponentNames(options: PluginOptions): Plugin {
     'object-to-table': 'ObjectToTableName',
   };
 
+  let isBuild = false;
+
   return {
     name: 'transform-component-names',
-    apply: 'build',
+    enforce: 'pre',
+
+    config(_config, { command }) {
+      isBuild = command === 'build';
+    },
 
     // ── buildStart: scan filesystem, validate, build maps ──────────────────
     buildStart() {
+      if (!isBuild) return;
       const projectConfig = readProjectConfig();
       const basePrefix = `px-int-${hash}-${resolveAcronym(projectConfig)}`;
       const predefined = resolvePredefinedComponents(projectConfig);
 
-      // Validate additionalEntry exists if provided
       if (additionalEntry && !existsSync(additionalEntry)) {
         throw new Error(
           `[vite-plugin-icl] additionalEntry file not found.\n` +
@@ -381,7 +387,7 @@ export function transformComponentNames(options: PluginOptions): Plugin {
 
     // ── transform: rewrite tags, verify exports, inject registration ───────
     transform(code: string, id: string): TransformResult | null {
-      if (!id.endsWith('.ts') || !isMatch(id.replace(/\\/g, '/'))) {
+      if (!isBuild || !id.endsWith('.ts') || !isMatch(id.replace(/\\/g, '/'))) {
         return null;
       }
 

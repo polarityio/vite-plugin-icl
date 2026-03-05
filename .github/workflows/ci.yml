@@ -25,3 +25,39 @@ jobs:
 
       - name: Test
         run: npm test
+
+      - name: Coverage
+        run: npx vitest run --coverage
+
+      - name: Upload results to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  version-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Verify version bump
+        run: |
+          npm install --no-save semver
+          PR_VERSION=$(node -p "require('./package.json').version")
+          LOCK_VERSION=$(node -p "require('./package-lock.json').version")
+          BASE_VERSION=$(git show origin/${{ github.base_ref }}:package.json | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).version")
+          echo "PR version: $PR_VERSION"
+          echo "Lock version: $LOCK_VERSION"
+          echo "Base version: $BASE_VERSION"
+          if [ "$PR_VERSION" != "$LOCK_VERSION" ]; then
+            echo "::error::package.json version ($PR_VERSION) does not match package-lock.json version ($LOCK_VERSION). Run 'npm install' to sync."
+            exit 1
+          fi
+          node -e "
+            const semver = require('semver');
+            if (!semver.gt('${PR_VERSION}', '${BASE_VERSION}')) {
+              console.error('Version ${PR_VERSION} must be greater than ${BASE_VERSION}');
+              process.exit(1);
+            }
+          "

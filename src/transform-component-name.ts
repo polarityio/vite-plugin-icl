@@ -198,7 +198,6 @@ function resolvePredefinedComponents(config: IntegrationConfig): Map<string, str
  */
 function resolveLibraryPackageJson(startDir: string): string {
   let dir = path.resolve(startDir);
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   while (true) {
     const candidate = path.join(dir, 'node_modules', 'integration-component-library', 'package.json');
     if (existsSync(candidate)) return candidate;
@@ -356,7 +355,7 @@ export function transformComponentNames(options: PluginOptions): Plugin {
   const versionSlug = `v${version.replace(/\./g, '-')}`;
 
   // componentMap: derived name → unique tag name
-  let componentMap: Record<string, string> = {};
+  const componentMap: Record<string, string> = {};
 
   // fileComponentMap: absolute file path → { componentName, uniqueName, className }
   const fileComponentMap = new Map<

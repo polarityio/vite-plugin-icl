@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Plugin } from 'vite';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -20,9 +20,9 @@ function callTransform(plugin: Plugin, code: string, id: string): unknown {
   return (plugin.transform as (code: string, id: string) => unknown).call({} as never, code, id);
 }
 
-function callBuildStart(plugin: Plugin): void {
+async function callBuildStart(plugin: Plugin): Promise<void> {
   if (typeof plugin.buildStart !== 'function') return;
-  (plugin.buildStart as () => void).call({} as never);
+  await (plugin.buildStart as () => void | Promise<void>).call({} as never);
 }
 
 function callResolveId(plugin: Plugin, id: string): string | null {
@@ -36,10 +36,10 @@ function callLoad(plugin: Plugin, id: string): unknown {
 }
 
 /** Creates a temporary directory, runs the callback, then removes the dir. */
-function withTempDir(fn: (dir: string) => void): void {
+async function withTempDir(fn: (dir: string) => void | Promise<void>): Promise<void> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vite-plugin-icl-'));
   try {
-    fn(dir);
+    await fn(dir);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -242,14 +242,14 @@ describe('componentNameToClassName', () => {
 // ─── transformComponentNames plugin ──────────────────────────────────────────
 
 describe('transformComponentNames plugin', () => {
-  it('has the correct plugin name', () => {
-    withTempDir((dir) => {
+  it('has the correct plugin name', async () => {
+    await withTempDir((dir) => {
       expect(transformComponentNames({ componentsDir: dir }).name).toBe('transform-component-names');
     });
   });
 
-  it('is applied only during build', () => {
-    withTempDir((dir) => {
+  it('is applied only during build', async () => {
+    await withTempDir((dir) => {
       expect(transformComponentNames({ componentsDir: dir }).apply).toBe('build');
     });
   });
@@ -257,23 +257,25 @@ describe('transformComponentNames plugin', () => {
   // ─── file filtering ────────────────────────────────────────────────────────
 
   describe('file filtering', () => {
-    it('only processes .ts files inside componentsDir', () => {
-      withTempDir((dir) => {
+    it('only processes .ts files inside componentsDir', async () => {
+      await withTempDir(async (dir) => {
+        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
         const plugin = transformComponentNames({ componentsDir: dir });
+        await callBuildStart(plugin);
         const inside = path.join(dir, 'my-component.ts');
         const outsideDir = path.join(os.tmpdir(), 'other', 'foo.ts');
         const wrongExt = path.join(dir, 'foo.js');
-        // library alias transform fires for matching .ts files
-        expect(callTransform(plugin, '<object-to-table>', inside)).not.toBeNull();
+        // component transform fires for matching .ts files
+        expect(callTransform(plugin, 'export class MyComponentComponent {}', inside)).not.toBeNull();
         // non-.ts files are ignored even if inside componentsDir
-        expect(callTransform(plugin, '<object-to-table>', wrongExt)).toBeNull();
+        expect(callTransform(plugin, 'export class MyComponentComponent {}', wrongExt)).toBeNull();
         // files outside componentsDir are ignored
-        expect(callTransform(plugin, '<object-to-table>', outsideDir)).toBeNull();
+        expect(callTransform(plugin, 'export class MyComponentComponent {}', outsideDir)).toBeNull();
       });
     });
 
-    it('returns null when the code has nothing to transform', () => {
-      withTempDir((dir) => {
+    it('returns null when the code has nothing to transform', async () => {
+      await withTempDir((dir) => {
         const plugin = transformComponentNames({ componentsDir: dir });
         expect(callTransform(plugin, 'const x = 42;', path.join(dir, 'foo.ts'))).toBeNull();
       });
@@ -282,40 +284,86 @@ describe('transformComponentNames plugin', () => {
 
   // ─── library component transforms ─────────────────────────────────────────
 
+  it('skips library component handling when the library is not available', async () => {
+    await withTempDir(async (dir) => {
+      const plugin = transformComponentNames({ componentsDir: dir });
+      await callBuildStart(plugin);
+      const file = path.join(dir, 'other.ts');
+      writeFile(dir, 'other.ts', 'const x = 1;');
+      const result = callTransform(plugin, '<object-to-table></object-to-table>', file);
+      expect(result).toBeNull();
+    });
+  });
+
   describe('library component transforms (object-to-table)', () => {
-    it('transforms an opening tag to a template expression', () => {
-      withTempDir((dir) => {
+    const MOCK_OTT_NAME = 'px-int-mock-icl-object-to-table-v1-0-0';
+
+    beforeEach(() => {
+      vi.doMock('integration-component-library', () => ({
+        ObjectToTableName: MOCK_OTT_NAME,
+        ObjectToTable: class ObjectToTable {},
+      }));
+    });
+
+    afterEach(() => {
+      vi.doUnmock('integration-component-library');
+      vi.resetModules();
+    });
+
+    it('rewrites an opening tag to the resolved concrete name', async () => {
+      await withTempDir(async (dir) => {
         const plugin = transformComponentNames({ componentsDir: dir });
+        await callBuildStart(plugin);
         const file = path.join(dir, 'my-component.ts');
-        expect((callTransform(plugin, '<object-to-table>', file) as { code: string }).code)
-          .toBe('<${ObjectToTableName}>');
+        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
+        const result = callTransform(plugin, `<object-to-table .data=\${x}>`, file) as { code: string };
+        expect(result.code).toContain(`<${MOCK_OTT_NAME} .data=\${x}>`);
       });
     });
 
-    it('transforms an opening tag with attributes', () => {
-      withTempDir((dir) => {
+    it('rewrites a closing tag to the resolved concrete name', async () => {
+      await withTempDir(async (dir) => {
         const plugin = transformComponentNames({ componentsDir: dir });
+        await callBuildStart(plugin);
         const file = path.join(dir, 'my-component.ts');
-        expect((callTransform(plugin, '<object-to-table .data=${x}>', file) as { code: string }).code)
-          .toBe('<${ObjectToTableName} .data=${x}>');
+        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
+        const result = callTransform(plugin, '</object-to-table>', file) as { code: string };
+        expect(result.code).toContain(`</${MOCK_OTT_NAME}>`);
       });
     });
 
-    it('transforms a closing tag to a template expression', () => {
-      withTempDir((dir) => {
+    it('rewrites both opening and closing tags', async () => {
+      await withTempDir(async (dir) => {
         const plugin = transformComponentNames({ componentsDir: dir });
+        await callBuildStart(plugin);
         const file = path.join(dir, 'my-component.ts');
-        expect((callTransform(plugin, '</object-to-table>', file) as { code: string }).code)
-          .toBe('</${ObjectToTableName}>');
+        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
+        const result = callTransform(plugin, '<object-to-table .data=${x}></object-to-table>', file) as { code: string };
+        expect(result.code).toContain(`<${MOCK_OTT_NAME} .data=\${x}>`);
+        expect(result.code).toContain(`</${MOCK_OTT_NAME}>`);
       });
     });
 
-    it('transforms both opening and closing tags', () => {
-      withTempDir((dir) => {
+    it('injects the library import statement', async () => {
+      await withTempDir(async (dir) => {
         const plugin = transformComponentNames({ componentsDir: dir });
+        await callBuildStart(plugin);
         const file = path.join(dir, 'my-component.ts');
-        expect((callTransform(plugin, '<object-to-table .data=${x}></object-to-table>', file) as { code: string }).code)
-          .toBe('<${ObjectToTableName} .data=${x}></${ObjectToTableName}>');
+        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
+        const result = callTransform(plugin, '<object-to-table></object-to-table>', file) as { code: string };
+        expect(result.code).toContain("import { ObjectToTable } from 'integration-component-library';");
+      });
+    });
+
+    it('injects the registration block for the library component', async () => {
+      await withTempDir(async (dir) => {
+        const plugin = transformComponentNames({ componentsDir: dir });
+        await callBuildStart(plugin);
+        const file = path.join(dir, 'my-component.ts');
+        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
+        const result = callTransform(plugin, '<object-to-table></object-to-table>', file) as { code: string };
+        expect(result.code).toContain(`customElements.get('${MOCK_OTT_NAME}')`);
+        expect(result.code).toContain(`customElements.define('${MOCK_OTT_NAME}', ObjectToTable as unknown as CustomElementConstructor)`);
       });
     });
   });
@@ -323,88 +371,88 @@ describe('transformComponentNames plugin', () => {
   // ─── componentsDir: filesystem scanning ───────────────────────────────────
 
   describe('componentsDir — filesystem scanning', () => {
-    it('builds the component map from files on disk', () => {
-      withTempDir((dir) => {
+    it('builds the component map from files on disk', async () => {
+      await withTempDir(async (dir) => {
         const src = "export class KeyValueComponent {}\nconst name = 'key-value';";
         writeFile(dir, 'key-value.ts', src);
         const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
+        await callBuildStart(plugin);
         const result = callTransform(plugin, src, path.join(dir, 'key-value.ts')) as { code: string };
         expect(result.code).toContain('px-int-');
         expect(result.code).toContain('-key-value-');
       });
     });
 
-    it('discovers components in subdirectories using -- as separator', () => {
-      withTempDir((dir) => {
+    it('discovers components in subdirectories using -- as separator', async () => {
+      await withTempDir(async (dir) => {
         const src = "export class ModalsSaveModalComponent {}\nconst name = 'modals--save-modal';";
         writeFile(dir, 'modals/save-modal.ts', src);
         const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
+        await callBuildStart(plugin);
         const result = callTransform(plugin, src, path.join(dir, 'modals', 'save-modal.ts')) as { code: string };
         expect(result.code).toContain('-modals--save-modal-');
       });
     });
 
-    it('accepts single-word filenames without a hyphen', () => {
-      withTempDir((dir) => {
+    it('accepts single-word filenames without a hyphen', async () => {
+      await withTempDir(async (dir) => {
         writeFile(dir, 'utils.ts', 'export class UtilsComponent {}');
         const plugin = transformComponentNames({ componentsDir: dir });
-        expect(() => callBuildStart(plugin)).not.toThrow();
+        await expect(callBuildStart(plugin)).resolves.not.toThrow();
       });
     });
 
-    it('throws a clear error for a filename starting with a digit', () => {
-      withTempDir((dir) => {
+    it('throws a clear error for a filename starting with a digit', async () => {
+      await withTempDir(async (dir) => {
         writeFile(dir, '2fa-widget.ts', 'export class TwoFaWidgetComponent {}');
         const plugin = transformComponentNames({ componentsDir: dir });
-        expect(() => callBuildStart(plugin)).toThrowError(/Invalid component file name/);
-        expect(() => callBuildStart(plugin)).toThrowError(/"2fa-widget"/);
-        expect(() => callBuildStart(plugin)).toThrowError(/Rename the file/);
+        await expect(callBuildStart(plugin)).rejects.toThrow(/Invalid component file name/);
+        await expect(callBuildStart(plugin)).rejects.toThrow(/"2fa-widget"/);
+        await expect(callBuildStart(plugin)).rejects.toThrow(/Rename the file/);
       });
     });
 
-    it('throws a clear error for a reserved custom element name', () => {
-      withTempDir((dir) => {
+    it('throws a clear error for a reserved custom element name', async () => {
+      await withTempDir(async (dir) => {
         writeFile(dir, 'color-profile.ts', 'export class ColorProfileComponent {}');
         const plugin = transformComponentNames({ componentsDir: dir });
-        expect(() => callBuildStart(plugin)).toThrowError(/Invalid component file name/);
-        expect(() => callBuildStart(plugin)).toThrowError(/"color-profile"/);
+        await expect(callBuildStart(plugin)).rejects.toThrow(/Invalid component file name/);
+        await expect(callBuildStart(plugin)).rejects.toThrow(/"color-profile"/);
       });
     });
 
-    it('does nothing when componentsDir does not exist', () => {
+    it('does nothing when componentsDir does not exist', async () => {
       const plugin = transformComponentNames({ componentsDir: '/nonexistent/path' });
-      expect(() => callBuildStart(plugin)).not.toThrow();
+      await expect(callBuildStart(plugin)).resolves.not.toThrow();
     });
   });
 
   // ─── class export verification ─────────────────────────────────────────────
 
   describe('class export verification', () => {
-    it('accepts a file with a matching class declaration', () => {
-      withTempDir((dir) => {
+    it('accepts a file with a matching class declaration', async () => {
+      await withTempDir(async (dir) => {
         const file = writeFile(dir, 'key-value.ts', 'export class KeyValueComponent extends LitElement {}');
         const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
+        await callBuildStart(plugin);
         expect(() => callTransform(plugin, 'export class KeyValueComponent extends LitElement {}', file)).not.toThrow();
       });
     });
 
-    it('accepts a file with an export { ClassName } re-export', () => {
-      withTempDir((dir) => {
+    it('accepts a file with an export { ClassName } re-export', async () => {
+      await withTempDir(async (dir) => {
         const file = writeFile(dir, 'key-value.ts', 'class KeyValueComponent {}\nexport { KeyValueComponent };');
         const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
+        await callBuildStart(plugin);
         expect(() => callTransform(plugin, 'class KeyValueComponent {}\nexport { KeyValueComponent };', file)).not.toThrow();
       });
     });
 
-    it('throws a clear error when the expected class export is missing', () => {
-      withTempDir((dir) => {
+    it('throws a clear error when the expected class export is missing', async () => {
+      await withTempDir(async (dir) => {
         const file = writeFile(dir, 'key-value.ts', 'export class WrongName extends LitElement {}');
         const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
+        await callBuildStart(plugin);
         expect(() => callTransform(plugin, 'export class WrongName extends LitElement {}', file))
           .toThrowError(/Missing expected class export/);
         expect(() => callTransform(plugin, 'export class WrongName extends LitElement {}', file))
@@ -418,11 +466,11 @@ describe('transformComponentNames plugin', () => {
   // ─── registration injection ────────────────────────────────────────────────
 
   describe('registration injection', () => {
-    it('injects a customElements.define block', () => {
-      withTempDir((dir) => {
+    it('injects a customElements.define block', async () => {
+      await withTempDir(async (dir) => {
         const file = writeFile(dir, 'key-value.ts', 'export class KeyValueComponent {}');
         const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
+        await callBuildStart(plugin);
         const result = callTransform(plugin, 'export class KeyValueComponent {}', file) as { code: string };
         expect(result.code).toContain("customElements.get('px-int-");
         expect(result.code).toContain('customElements.define(');
@@ -430,33 +478,33 @@ describe('transformComponentNames plugin', () => {
       });
     });
 
-    it('injects the unique tag name into the registration block', () => {
-      withTempDir((dir) => {
+    it('injects the unique tag name into the registration block', async () => {
+      await withTempDir(async (dir) => {
         const file = writeFile(dir, 'key-value.ts', 'export class KeyValueComponent {}');
         const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
+        await callBuildStart(plugin);
         const result = callTransform(plugin, 'export class KeyValueComponent {}', file) as { code: string };
         expect(result.code).toMatch(/customElements\.get\('px-int-[a-z0-9]+-icl-key-value-v\d+-\d+-\d+'\)/);
       });
     });
 
-    it('does not inject an external library import', () => {
-      withTempDir((dir) => {
+    it('does not inject an external library import', async () => {
+      await withTempDir(async (dir) => {
         const file = writeFile(dir, 'key-value.ts', 'export class KeyValueComponent {}');
         const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
+        await callBuildStart(plugin);
         const result = callTransform(plugin, 'export class KeyValueComponent {}', file) as { code: string };
         expect(result.code).not.toContain('import {');
         expect(result.code).not.toContain("from 'integration-component-library'");
       });
     });
 
-    it('does not re-inject the registration block on repeated transforms', () => {
-      withTempDir((dir) => {
+    it('does not re-inject the registration block on repeated transforms', async () => {
+      await withTempDir(async (dir) => {
         const src = 'export class KeyValueComponent {}';
         const file = writeFile(dir, 'key-value.ts', src);
         const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
+        await callBuildStart(plugin);
         const first = (callTransform(plugin, src, file) as { code: string }).code;
         const second = callTransform(plugin, first, file);
         expect((first.match(/customElements\.define\(/g) ?? []).length).toBe(1);
@@ -468,36 +516,36 @@ describe('transformComponentNames plugin', () => {
   // ─── autoImport option ─────────────────────────────────────────────────────
 
   describe('autoImport option', () => {
-    it('resolves VIRTUAL_COMPONENTS_ID when autoImport is true (default)', () => {
-      withTempDir((dir) => {
+    it('resolves VIRTUAL_COMPONENTS_ID when autoImport is true (default)', async () => {
+      await withTempDir((dir) => {
         const plugin = transformComponentNames({ componentsDir: dir });
         expect(callResolveId(plugin, VIRTUAL_COMPONENTS_ID)).toBe('\0virtual:icl-components');
       });
     });
 
-    it('does not resolve VIRTUAL_COMPONENTS_ID when autoImport is false', () => {
-      withTempDir((dir) => {
+    it('does not resolve VIRTUAL_COMPONENTS_ID when autoImport is false', async () => {
+      await withTempDir((dir) => {
         const plugin = transformComponentNames({ componentsDir: dir, autoImport: false });
         expect(callResolveId(plugin, VIRTUAL_COMPONENTS_ID)).toBeNull();
       });
     });
 
-    it('still injects registration when autoImport is false', () => {
-      withTempDir((dir) => {
+    it('still injects registration when autoImport is false', async () => {
+      await withTempDir(async (dir) => {
         const file = writeFile(dir, 'key-value.ts', 'export class KeyValueComponent {}');
         const plugin = transformComponentNames({ componentsDir: dir, autoImport: false });
-        callBuildStart(plugin);
+        await callBuildStart(plugin);
         const result = callTransform(plugin, 'export class KeyValueComponent {}', file) as { code: string };
         expect(result.code).toContain('customElements.define(');
       });
     });
 
-    it('still rewrites tags when autoImport is false', () => {
-      withTempDir((dir) => {
+    it('still rewrites tags when autoImport is false', async () => {
+      await withTempDir(async (dir) => {
         const src = "export class KeyValueComponent {}\nconst n = 'key-value';";
         const file = writeFile(dir, 'key-value.ts', src);
         const plugin = transformComponentNames({ componentsDir: dir, autoImport: false });
-        callBuildStart(plugin);
+        await callBuildStart(plugin);
         const result = callTransform(plugin, src, file) as { code: string };
         expect(result.code).toContain('px-int-');
       });
@@ -507,13 +555,13 @@ describe('transformComponentNames plugin', () => {
   // ─── per-build hash uniqueness ─────────────────────────────────────────────
 
   describe('per-build hash uniqueness', () => {
-    it('generates a different unique name on each plugin instantiation', () => {
-      withTempDir((dir) => {
+    it('generates a different unique name on each plugin instantiation', async () => {
+      await withTempDir(async (dir) => {
         writeFile(dir, 'key-value.ts', 'export class KeyValueComponent {}');
         const pluginA = transformComponentNames({ componentsDir: dir });
         const pluginB = transformComponentNames({ componentsDir: dir });
-        callBuildStart(pluginA);
-        callBuildStart(pluginB);
+        await callBuildStart(pluginA);
+        await callBuildStart(pluginB);
         const a = (callTransform(pluginA, 'export class KeyValueComponent {}', path.join(dir, 'key-value.ts')) as { code: string }).code;
         const b = (callTransform(pluginB, 'export class KeyValueComponent {}', path.join(dir, 'key-value.ts')) as { code: string }).code;
         expect(a).not.toBe(b);
@@ -539,35 +587,35 @@ describe('transformComponentNames plugin', () => {
       if (!hadDir && fs.existsSync(configDir)) fs.rmdirSync(configDir);
     });
 
-    it('uses "icl" as the default acronym when config/config.json is absent', () => {
-      withTempDir((dir) => {
+    it('uses "icl" as the default acronym when config/config.json is absent', async () => {
+      await withTempDir(async (dir) => {
         const file = writeFile(dir, 'key-value.ts', 'export class KeyValueComponent {}');
         const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
+        await callBuildStart(plugin);
         const result = callTransform(plugin, 'export class KeyValueComponent {}', file) as { code: string };
         expect(result.code).toContain('-icl-');
       });
     });
 
-    it('uses the project acronym from config/config.json', () => {
+    it('uses the project acronym from config/config.json', async () => {
       if (!hadDir) fs.mkdirSync(configDir, { recursive: true });
       fs.writeFileSync(configFile, JSON.stringify({ acronym: 'TST' }));
-      withTempDir((dir) => {
+      await withTempDir(async (dir) => {
         const file = writeFile(dir, 'key-value.ts', 'export class KeyValueComponent {}');
         const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
+        await callBuildStart(plugin);
         const result = callTransform(plugin, 'export class KeyValueComponent {}', file) as { code: string };
         expect(result.code).toContain('-tst-');
       });
     });
 
-    it('lowercases an uppercase acronym', () => {
+    it('lowercases an uppercase acronym', async () => {
       if (!hadDir) fs.mkdirSync(configDir, { recursive: true });
       fs.writeFileSync(configFile, JSON.stringify({ acronym: 'ALLCAPS' }));
-      withTempDir((dir) => {
+      await withTempDir(async (dir) => {
         const file = writeFile(dir, 'key-value.ts', 'export class KeyValueComponent {}');
         const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
+        await callBuildStart(plugin);
         const result = callTransform(plugin, 'export class KeyValueComponent {}', file) as { code: string };
         expect(result.code).toContain('-allcaps-');
         expect(result.code).not.toContain('ALLCAPS');
@@ -578,12 +626,12 @@ describe('transformComponentNames plugin', () => {
   // ─── generated name casing ─────────────────────────────────────────────────
 
   describe('generated component name casing', () => {
-    it('the full generated unique tag name is entirely lowercase', () => {
-      withTempDir((dir) => {
+    it('the full generated unique tag name is entirely lowercase', async () => {
+      await withTempDir(async (dir) => {
         const src = "export class KeyValueComponent {}\nconst n = 'key-value';";
         const file = writeFile(dir, 'key-value.ts', src);
         const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
+        await callBuildStart(plugin);
         const result = callTransform(plugin, src, file) as { code: string };
         const match = result.code.match(/'(px-int-[^']+)'/);
         expect(match).not.toBeNull();
@@ -591,12 +639,12 @@ describe('transformComponentNames plugin', () => {
       });
     });
 
-    it('the full generated unique tag name contains no uppercase letters', () => {
-      withTempDir((dir) => {
+    it('the full generated unique tag name contains no uppercase letters', async () => {
+      await withTempDir(async (dir) => {
         const src = "export class KeyValueComponent {}\nconst n = 'key-value';";
         const file = writeFile(dir, 'key-value.ts', src);
         const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
+        await callBuildStart(plugin);
         const result = callTransform(plugin, src, file) as { code: string };
         const match = result.code.match(/'(px-int-[^']+)'/);
         expect(match).not.toBeNull();
@@ -616,15 +664,15 @@ describe('transformComponentNames plugin', () => {
   // ─── virtual module: resolveId ─────────────────────────────────────────────
 
   describe('virtual module — resolveId', () => {
-    it('resolves the virtual module id to the internal resolved id', () => {
-      withTempDir((dir) => {
+    it('resolves the virtual module id to the internal resolved id', async () => {
+      await withTempDir((dir) => {
         const plugin = transformComponentNames({ componentsDir: dir });
         expect(callResolveId(plugin, VIRTUAL_COMPONENTS_ID)).toBe('\0virtual:icl-components');
       });
     });
 
-    it('resolves an absolute path ending with the virtual module id (Vite 7+)', () => {
-      withTempDir((dir) => {
+    it('resolves an absolute path ending with the virtual module id (Vite 7+)', async () => {
+      await withTempDir((dir) => {
         const plugin = transformComponentNames({ componentsDir: dir });
         expect(callResolveId(plugin, '/project/root/' + VIRTUAL_COMPONENTS_ID)).toBe(
           '\0virtual:icl-components',
@@ -632,8 +680,8 @@ describe('transformComponentNames plugin', () => {
       });
     });
 
-    it('returns null for any other module id', () => {
-      withTempDir((dir) => {
+    it('returns null for any other module id', async () => {
+      await withTempDir((dir) => {
         const plugin = transformComponentNames({ componentsDir: dir });
         expect(callResolveId(plugin, 'some-other-module')).toBeNull();
         expect(callResolveId(plugin, './key-value.js')).toBeNull();
@@ -644,19 +692,19 @@ describe('transformComponentNames plugin', () => {
   // ─── virtual module: load ──────────────────────────────────────────────────
 
   describe('virtual module — load', () => {
-    it('returns null for non-virtual module ids', () => {
-      withTempDir((dir) => {
+    it('returns null for non-virtual module ids', async () => {
+      await withTempDir((dir) => {
         const plugin = transformComponentNames({ componentsDir: dir });
         expect(callLoad(plugin, path.join(dir, 'key-value.ts'))).toBeNull();
       });
     });
 
-    it('generates a side-effect import for each discovered component file', () => {
-      withTempDir((dir) => {
+    it('generates a side-effect import for each discovered component file', async () => {
+      await withTempDir(async (dir) => {
         writeFile(dir, 'key-value.ts', 'export class KeyValueComponent {}');
         writeFile(dir, 'save-modal.ts', 'export class SaveModalComponent {}');
         const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
+        await callBuildStart(plugin);
         const result = callLoad(plugin, '\0virtual:icl-components') as { code: string };
         expect(result.code).toContain("import '");
         expect(result.code).toContain('key-value.ts');
@@ -664,49 +712,49 @@ describe('transformComponentNames plugin', () => {
       });
     });
 
-    it('uses forward slashes in import paths on all platforms', () => {
-      withTempDir((dir) => {
+    it('uses forward slashes in import paths on all platforms', async () => {
+      await withTempDir(async (dir) => {
         writeFile(dir, 'key-value.ts', 'export class KeyValueComponent {}');
         const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
+        await callBuildStart(plugin);
         const result = callLoad(plugin, '\0virtual:icl-components') as { code: string };
         expect(result.code).not.toContain('\\');
       });
     });
 
-    it('includes export {} so Rollup treats it as an ES module', () => {
-      withTempDir((dir) => {
+    it('includes export {} so Rollup treats it as an ES module', async () => {
+      await withTempDir(async (dir) => {
         writeFile(dir, 'key-value.ts', 'export class KeyValueComponent {}');
         const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
+        await callBuildStart(plugin);
         const result = callLoad(plugin, '\0virtual:icl-components') as { code: string };
         expect(result.code).toContain('export {}');
       });
     });
 
-    it('returns a null source map', () => {
-      withTempDir((dir) => {
+    it('returns a null source map', async () => {
+      await withTempDir(async (dir) => {
         writeFile(dir, 'key-value.ts', 'export class KeyValueComponent {}');
         const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
+        await callBuildStart(plugin);
         const result = callLoad(plugin, '\0virtual:icl-components') as { map: unknown };
         expect(result.map).toBeNull();
       });
     });
 
-    it('produces an empty export when the directory has no .ts files', () => {
-      withTempDir((dir) => {
+    it('produces an empty export when the directory has no .ts files', async () => {
+      await withTempDir(async (dir) => {
         const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
+        await callBuildStart(plugin);
         const result = callLoad(plugin, '\0virtual:icl-components') as { code: string };
         expect(result.code.trim()).toBe('export {};');
       });
     });
 
-    it('returns null from load when autoImport is false', () => {
-      withTempDir((dir) => {
+    it('returns null from load when autoImport is false', async () => {
+      await withTempDir(async (dir) => {
         const plugin = transformComponentNames({ componentsDir: dir, autoImport: false });
-        callBuildStart(plugin);
+        await callBuildStart(plugin);
         // resolveId returns null so RESOLVED_VIRTUAL_ID is never requested,
         // but if somehow called directly the load hook should also return null
         expect(callLoad(plugin, '\0virtual:icl-components')).toBeNull();
@@ -717,33 +765,33 @@ describe('transformComponentNames plugin', () => {
   // ─── additionalEntry option ────────────────────────────────────────────────
 
   describe('additionalEntry option', () => {
-    it('does not throw when additionalEntry exists', () => {
-      withTempDir((dir) => {
+    it('does not throw when additionalEntry exists', async () => {
+      await withTempDir(async (dir) => {
         const entry = writeFile(dir, 'index.ts', 'export const version = "1.0.0";');
         const plugin = transformComponentNames({ componentsDir: dir, additionalEntry: entry });
-        expect(() => callBuildStart(plugin)).not.toThrow();
+        await expect(callBuildStart(plugin)).resolves.not.toThrow();
       });
     });
 
-    it('throws a clear error when additionalEntry path does not exist', () => {
-      withTempDir((dir) => {
+    it('throws a clear error when additionalEntry path does not exist', async () => {
+      await withTempDir(async (dir) => {
         const plugin = transformComponentNames({
           componentsDir: dir,
           additionalEntry: '/nonexistent/path/index.ts',
         });
-        expect(() => callBuildStart(plugin)).toThrowError(/additionalEntry file not found/);
-        expect(() => callBuildStart(plugin)).toThrowError('/nonexistent/path/index.ts');
+        await expect(callBuildStart(plugin)).rejects.toThrow(/additionalEntry file not found/);
+        await expect(callBuildStart(plugin)).rejects.toThrow('/nonexistent/path/index.ts');
       });
     });
 
-    it('throws before scanning components when additionalEntry is missing', () => {
-      withTempDir((dir) => {
+    it('throws before scanning components when additionalEntry is missing', async () => {
+      await withTempDir(async (dir) => {
         writeFile(dir, 'key-value.ts', 'export class KeyValueComponent {}');
         const plugin = transformComponentNames({
           componentsDir: dir,
           additionalEntry: '/nonexistent/index.ts',
         });
-        expect(() => callBuildStart(plugin)).toThrowError(/additionalEntry file not found/);
+        await expect(callBuildStart(plugin)).rejects.toThrow(/additionalEntry file not found/);
       });
     });
   });
@@ -766,41 +814,41 @@ describe('transformComponentNames plugin', () => {
       if (!hadDir && fs.existsSync(configDir)) fs.rmdirSync(configDir);
     });
 
-    it('uses the pre-assigned element name from config for a matching component type', () => {
+    it('uses the pre-assigned element name from config for a matching component type', async () => {
       if (!hadDir) fs.mkdirSync(configDir, { recursive: true });
       const predefinedName = 'px-int-9b69kxiww6yoxs74n4auduspb-echo-wc-summary-v5-0-0';
       fs.writeFileSync(configFile, JSON.stringify({
         acronym: 'echo-wc',
         webComponents: { components: [{ type: 'summary', element: predefinedName }] },
       }));
-      withTempDir((dir) => {
+      await withTempDir(async (dir) => {
         const src = 'export class SummaryComponent {}';
         const file = writeFile(dir, 'summary.ts', src);
         const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
+        await callBuildStart(plugin);
         const result = callTransform(plugin, src, file) as { code: string };
         expect(result.code).toContain(`customElements.get('${predefinedName}')`);
         expect(result.code).toContain(`customElements.define('${predefinedName}'`);
       });
     });
 
-    it('does not use a generated hash-based name when a predefined name is supplied', () => {
+    it('does not use a generated hash-based name when a predefined name is supplied', async () => {
       if (!hadDir) fs.mkdirSync(configDir, { recursive: true });
       const predefinedName = 'px-int-9b69kxiww6yoxs74n4auduspb-echo-wc-summary-v5-0-0';
       fs.writeFileSync(configFile, JSON.stringify({
         webComponents: { components: [{ type: 'summary', element: predefinedName }] },
       }));
-      withTempDir((dir) => {
+      await withTempDir(async (dir) => {
         const src = 'export class SummaryComponent {}';
         const file = writeFile(dir, 'summary.ts', src);
         const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
+        await callBuildStart(plugin);
         const result = callTransform(plugin, src, file) as { code: string };
         expect(result.code).not.toMatch(/customElements\.get\('px-int-(?!9b69k)/);
       });
     });
 
-    it('handles multiple predefined components independently', () => {
+    it('handles multiple predefined components independently', async () => {
       if (!hadDir) fs.mkdirSync(configDir, { recursive: true });
       const summaryName = 'px-int-9b69kxiww6yoxs74n4auduspb-echo-wc-summary-v5-0-0';
       const detailsName = 'px-int-9b69kxiww6yoxs74n4auduspb-echo-wc-details-v5-0-0';
@@ -812,11 +860,11 @@ describe('transformComponentNames plugin', () => {
           ],
         },
       }));
-      withTempDir((dir) => {
+      await withTempDir(async (dir) => {
         const summaryFile = writeFile(dir, 'summary.ts', 'export class SummaryComponent {}');
         const detailsFile = writeFile(dir, 'details.ts', 'export class DetailsComponent {}');
         const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
+        await callBuildStart(plugin);
         expect((callTransform(plugin, 'export class SummaryComponent {}', summaryFile) as { code: string }).code)
           .toContain(`customElements.get('${summaryName}')`);
         expect((callTransform(plugin, 'export class DetailsComponent {}', detailsFile) as { code: string }).code)
@@ -824,32 +872,32 @@ describe('transformComponentNames plugin', () => {
       });
     });
 
-    it('rewrites tags using the predefined name', () => {
+    it('rewrites tags using the predefined name', async () => {
       if (!hadDir) fs.mkdirSync(configDir, { recursive: true });
       const predefinedName = 'px-int-9b69kxiww6yoxs74n4auduspb-echo-wc-summary-v5-0-0';
       fs.writeFileSync(configFile, JSON.stringify({
         webComponents: { components: [{ type: 'summary', element: predefinedName }] },
       }));
-      withTempDir((dir) => {
+      await withTempDir(async (dir) => {
         const src = 'export class SummaryComponent {}\nconst t = \'<summary class="main"></summary>\';';
         writeFile(dir, 'summary.ts', src);
         const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
+        await callBuildStart(plugin);
         const result = callTransform(plugin, src, path.join(dir, 'summary.ts')) as { code: string };
         expect(result.code).toContain(`<${predefinedName}`);
         expect(result.code).toContain(`</${predefinedName}>`);
       });
     });
 
-    it('still performs class export verification for predefined components', () => {
+    it('still performs class export verification for predefined components', async () => {
       if (!hadDir) fs.mkdirSync(configDir, { recursive: true });
       fs.writeFileSync(configFile, JSON.stringify({
         webComponents: { components: [{ type: 'summary', element: 'px-int-fixed-summary' }] },
       }));
-      withTempDir((dir) => {
+      await withTempDir(async (dir) => {
         const file = writeFile(dir, 'summary.ts', 'export class WrongName {}');
         const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
+        await callBuildStart(plugin);
         expect(() => callTransform(plugin, 'export class WrongName {}', file))
           .toThrowError(/Missing expected class export/);
         expect(() => callTransform(plugin, 'export class WrongName {}', file))
@@ -857,7 +905,7 @@ describe('transformComponentNames plugin', () => {
       });
     });
 
-    it('ignores components array entries with missing or empty type/element fields', () => {
+    it('ignores components array entries with missing or empty type/element fields', async () => {
       if (!hadDir) fs.mkdirSync(configDir, { recursive: true });
       fs.writeFileSync(configFile, JSON.stringify({
         webComponents: {
@@ -869,24 +917,24 @@ describe('transformComponentNames plugin', () => {
           ],
         },
       }));
-      withTempDir((dir) => {
+      await withTempDir(async (dir) => {
         const src = 'export class SummaryComponent {}';
         const file = writeFile(dir, 'summary.ts', src);
         const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
+        await callBuildStart(plugin);
         const result = callTransform(plugin, src, file) as { code: string };
         expect(result.code).toMatch(/customElements\.get\('px-int-[a-z0-9]+-icl-summary-/);
       });
     });
 
-    it('falls back gracefully when config/config.json has no components array', () => {
+    it('falls back gracefully when config/config.json has no components array', async () => {
       if (!hadDir) fs.mkdirSync(configDir, { recursive: true });
       fs.writeFileSync(configFile, JSON.stringify({ acronym: 'test' }));
-      withTempDir((dir) => {
+      await withTempDir(async (dir) => {
         const src = 'export class SummaryComponent {}';
         const file = writeFile(dir, 'summary.ts', src);
         const plugin = transformComponentNames({ componentsDir: dir });
-        expect(() => callBuildStart(plugin)).not.toThrow();
+        await expect(callBuildStart(plugin)).resolves.not.toThrow();
         const result = callTransform(plugin, src, file) as { code: string };
         expect(result.code).toMatch(/customElements\.get\('px-int-[a-z0-9]+-test-summary-/);
       });

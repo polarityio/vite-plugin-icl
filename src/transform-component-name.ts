@@ -330,10 +330,16 @@ export function transformComponentNames(options: PluginOptions): Plugin {
     { componentName: string; uniqueName: string; className: string }
   >();
 
-  // Library component aliases — these never change
-  const libraryComponentMap: Record<string, string> = {
-    'object-to-table': 'ObjectToTableName',
+  // Library component definitions: short name → exports from integration-component-library
+  const libraryComponentDefs: Record<string, { className: string; nameExport: string }> = {
+    'object-to-table': { className: 'ObjectToTable', nameExport: 'ObjectToTableName' },
   };
+
+  // Resolved at build time: short name → { resolvedTagName, className }
+  const resolvedLibraryMap = new Map<
+    string,
+    { resolvedTagName: string; className: string }
+  >();
 
   return {
     name: 'transform-component-names',
@@ -341,7 +347,7 @@ export function transformComponentNames(options: PluginOptions): Plugin {
     apply: 'build',
 
     // ── buildStart: scan filesystem, validate, build maps ──────────────────
-    buildStart() {
+    async buildStart() {
       const projectConfig = readProjectConfig();
       const basePrefix = `px-int-${hash}-${resolveAcronym(projectConfig)}`;
       const predefined = resolvePredefinedComponents(projectConfig);
@@ -379,6 +385,21 @@ export function transformComponentNames(options: PluginOptions): Plugin {
 
         componentMap[componentName] = uniqueName;
         fileComponentMap.set(path.normalize(absPath), { componentName, uniqueName, className });
+      }
+
+      // Resolve library component names at build time
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const lib: Record<string, unknown> = await import('integration-component-library');
+        for (const [shortName, { className, nameExport }] of Object.entries(libraryComponentDefs)) {
+          const resolvedTagName = lib[nameExport];
+          if (typeof resolvedTagName === 'string' && resolvedTagName.length > 0) {
+            componentMap[shortName] = resolvedTagName;
+            resolvedLibraryMap.set(shortName, { resolvedTagName, className });
+          }
+        }
+      } catch {
+        // integration-component-library not available; skip library component handling
       }
     },
 
@@ -440,18 +461,20 @@ export function transformComponentNames(options: PluginOptions): Plugin {
         }
       }
 
-      // ── 3. Library component alias rewrites ───────────────────────────────
-      for (const [alias, constantName] of Object.entries(libraryComponentMap)) {
-        const openTagRegex = new RegExp(`<${alias}(\\s|>)`, 'g');
-        if (openTagRegex.test(transformedCode)) {
-          transformedCode = transformedCode.replace(openTagRegex, `<\${${constantName}}$1`);
-          hasChanges = true;
-        }
+      // ── 3. Library component import + registration injection ──────────────
+      for (const [, { resolvedTagName, className }] of resolvedLibraryMap) {
+        if (transformedCode.includes(resolvedTagName)) {
+          const importStatement = `import { ${className} } from 'integration-component-library';`;
+          if (!transformedCode.includes(importStatement)) {
+            transformedCode = `${importStatement}\n${transformedCode}`;
+            hasChanges = true;
+          }
 
-        const closeTagRegex = new RegExp(`</${alias}>`, 'g');
-        if (closeTagRegex.test(transformedCode)) {
-          transformedCode = transformedCode.replace(closeTagRegex, `</\${${constantName}}>`);
-          hasChanges = true;
+          const registrationBlock = `if (customElements.get('${resolvedTagName}') === undefined) {\n  customElements.define('${resolvedTagName}', ${className} as unknown as CustomElementConstructor);\n}`;
+          if (!transformedCode.includes(`customElements.get('${resolvedTagName}')`)) {
+            transformedCode = `${transformedCode}\n${registrationBlock}\n`;
+            hasChanges = true;
+          }
         }
       }
 

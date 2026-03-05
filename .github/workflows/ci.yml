@@ -37,9 +37,15 @@ jobs:
         run: |
           npm install --no-save semver
           PR_VERSION=$(node -p "require('./package.json').version")
+          LOCK_VERSION=$(node -p "require('./package-lock.json').version")
           BASE_VERSION=$(git show origin/${{ github.base_ref }}:package.json | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).version")
           echo "PR version: $PR_VERSION"
+          echo "Lock version: $LOCK_VERSION"
           echo "Base version: $BASE_VERSION"
+          if [ "$PR_VERSION" != "$LOCK_VERSION" ]; then
+            echo "::error::package.json version ($PR_VERSION) does not match package-lock.json version ($LOCK_VERSION). Run 'npm install' to sync."
+            exit 1
+          fi
           node -e "
             const semver = require('semver');
             if (!semver.gt('${PR_VERSION}', '${BASE_VERSION}')) {

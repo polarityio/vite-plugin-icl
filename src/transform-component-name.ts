@@ -306,6 +306,20 @@ export interface PluginOptions {
    * });
    */
   additionalEntry?: string;
+
+  /**
+   * When `true` (the default), the plugin rewrites tags from
+   * `integration-component-library` (e.g. `<object-to-table>`) into their
+   * resolved versioned names at build time, and injects the corresponding
+   * `import` and `customElements.define(...)` calls automatically.
+   *
+   * Set to `false` if you prefer to handle library components yourself — for
+   * example by using `staticHtml` / `unsafeStatic` with the exported name
+   * variable, or by referencing the long-form tag name directly.
+   *
+   * @default true
+   */
+  rewriteLibraryComponents?: boolean;
 }
 
 // ─── Plugin ───────────────────────────────────────────────────────────────────
@@ -325,6 +339,7 @@ export function transformComponentNames(options: PluginOptions): Plugin {
     componentsDir,
     autoImport = true,
     additionalEntry,
+    rewriteLibraryComponents = true,
   } = options;
 
   // ── File-matching setup ──────────────────────────────────────────────────
@@ -410,27 +425,29 @@ export function transformComponentNames(options: PluginOptions): Plugin {
       // Read the library's package.json version and compute tag names using the
       // same deterministic formula the library uses, avoiding executing the
       // library code (which may reference browser APIs unavailable in Node).
-      try {
-        // Walk up from the project root to find the library's package.json
-        // in node_modules. We cannot use require.resolve because the library's
-        // "exports" field may not expose package.json or may be ESM-only.
-        const libPkgPath = resolveLibraryPackageJson(process.cwd());
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const libPkg: { version?: string } = JSON.parse(readFileSync(libPkgPath, 'utf-8'));
-        const libVersion = libPkg.version ?? '0.0.0';
-        const normalizedVersion = libVersion.replace(/\./g, '-');
-        for (const [shortName, { className }] of Object.entries(libraryComponentDefs)) {
-          const resolvedTagName = `px-lib-${shortName.toLowerCase()}-v${normalizedVersion}`;
-          componentMap[shortName] = resolvedTagName;
-          resolvedLibraryMap.set(shortName, { resolvedTagName, className });
+      if (rewriteLibraryComponents) {
+        try {
+          // Walk up from the project root to find the library's package.json
+          // in node_modules. We cannot use require.resolve because the library's
+          // "exports" field may not expose package.json or may be ESM-only.
+          const libPkgPath = resolveLibraryPackageJson(process.cwd());
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          const libPkg: { version?: string } = JSON.parse(readFileSync(libPkgPath, 'utf-8'));
+          const libVersion = libPkg.version ?? '0.0.0';
+          const normalizedVersion = libVersion.replace(/\./g, '-');
+          for (const [shortName, { className }] of Object.entries(libraryComponentDefs)) {
+            const resolvedTagName = `px-lib-${shortName.toLowerCase()}-v${normalizedVersion}`;
+            componentMap[shortName] = resolvedTagName;
+            resolvedLibraryMap.set(shortName, { resolvedTagName, className });
+          }
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e);
+          console.warn(
+            `[vite-plugin-icl] integration-component-library not found; ` +
+            `library component rewrites (e.g. object-to-table) will be skipped.\n` +
+            `  Reason: ${msg}`,
+          );
         }
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : String(e);
-        console.warn(
-          `[vite-plugin-icl] integration-component-library not found; ` +
-          `library component rewrites (e.g. object-to-table) will be skipped.\n` +
-          `  Reason: ${msg}`,
-        );
       }
     },
 

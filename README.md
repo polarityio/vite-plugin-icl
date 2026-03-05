@@ -245,35 +245,25 @@ When the plugin discovers a file whose derived name matches a `type` in this lis
 
 ## Library Component Aliases
 
-Components from `integration-component-library` are automatically transformed to work with Lit's `staticHtml` without requiring `unsafeStatic`.
+When `integration-component-library` is installed in your project, the plugin automatically rewrites its component tags (e.g. `<object-to-table>`) into their resolved versioned names at build time, and injects the corresponding `import` and `customElements.define(...)` calls.
 
 | Write this | Transforms to |
 |---|---|
-| `<object-to-table>` | `<${ObjectToTableName}>` |
-| `</object-to-table>` | `</${ObjectToTableName}>` |
+| `<object-to-table>` | `<px-lib-object-to-table-v1-0-0>` |
+| `</object-to-table>` | `</px-lib-object-to-table-v1-0-0>` |
 
-**Source:**
+The resolved name is computed from the library's `package.json` version using the formula `px-lib-{name}-v{version}` (with dots replaced by hyphens). No library code is executed at build time.
 
-```ts
-import { staticHtml as html } from '@lit-labs/motion';
-import { ObjectToTableName } from 'integration-component-library';
-
-render() {
-  return html`
-    <object-to-table .data=${this.data}></object-to-table>
-  `;
-}
-```
-
-**After build:**
+If you prefer to handle library components yourself — for example by using `staticHtml` / `unsafeStatic` with the exported name variable, or by referencing the long-form tag name directly — set `rewriteLibraryComponents: false`:
 
 ```ts
-render() {
-  return html`
-    <${ObjectToTableName} .data=${this.data}></${ObjectToTableName}>
-  `;
-}
+transformComponentNames({
+  componentsDir: resolve(__dirname, 'src/web-components'),
+  rewriteLibraryComponents: false,
+})
 ```
+
+If `integration-component-library` is not installed, library component rewriting is skipped automatically with a console warning.
 
 ---
 
@@ -314,6 +304,20 @@ See [Opting Out of Auto-Import](#opting-out-of-auto-import) for details.
 The absolute path to a hand-written entry file for exports beyond the auto-discovered components. The build will fail immediately with a clear error if this file does not exist.
 
 See [Exporting Additional Files](#exporting-additional-files) for a full example.
+
+---
+
+### `rewriteLibraryComponents`
+
+| Type | Default |
+|---|---|
+| `boolean` | `true` |
+
+When `true`, the plugin rewrites `integration-component-library` component tags (e.g. `<object-to-table>`) into their resolved versioned names and injects `import` / `customElements.define(...)` calls automatically.
+
+Set to `false` to handle library components yourself.
+
+See [Library Component Aliases](#library-component-aliases) for details.
 
 ---
 

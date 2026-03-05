@@ -295,6 +295,17 @@ describe('transformComponentNames plugin', () => {
     });
   });
 
+  it('skips library component rewriting when rewriteLibraryComponents is false', () => {
+    withTempDir((dir) => {
+      const plugin = transformComponentNames({ componentsDir: dir, rewriteLibraryComponents: false });
+      callBuildStart(plugin);
+      const file = path.join(dir, 'my-component.ts');
+      writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
+      const result = callTransform(plugin, '<object-to-table .data=${x}></object-to-table>', file);
+      expect(result).toBeNull();
+    });
+  });
+
   describe('library component transforms (object-to-table)', () => {
     const MOCK_LIB_VERSION = '1.0.0';
     const MOCK_OTT_NAME = 'px-lib-object-to-table-v1-0-0';
@@ -371,6 +382,16 @@ describe('transformComponentNames plugin', () => {
         const result = callTransform(plugin, '<object-to-table></object-to-table>', file) as { code: string };
         expect(result.code).toContain(`customElements.get('${MOCK_OTT_NAME}')`);
         expect(result.code).toContain(`customElements.define('${MOCK_OTT_NAME}', ObjectToTable as unknown as CustomElementConstructor)`);
+      });
+    });
+    it('does not rewrite library tags when rewriteLibraryComponents is false even if library is installed', () => {
+      withTempDir((dir) => {
+        const plugin = transformComponentNames({ componentsDir: dir, rewriteLibraryComponents: false });
+        callBuildStart(plugin);
+        const file = path.join(dir, 'my-component.ts');
+        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
+        const result = callTransform(plugin, '<object-to-table .data=${x}></object-to-table>', file);
+        expect(result).toBeNull();
       });
     });
   });

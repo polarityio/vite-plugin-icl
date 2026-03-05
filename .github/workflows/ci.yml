@@ -26,6 +26,14 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Coverage
+        run: npx vitest run --coverage
+
+      - name: Upload results to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+
   version-check:
     runs-on: ubuntu-latest
     steps:

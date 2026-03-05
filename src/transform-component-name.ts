@@ -330,9 +330,9 @@ export function transformComponentNames(options: PluginOptions): Plugin {
     { componentName: string; uniqueName: string; className: string }
   >();
 
-  // Library component definitions: short name → exports from integration-component-library
-  const libraryComponentDefs: Record<string, { className: string; nameExport: string }> = {
-    'object-to-table': { className: 'ObjectToTable', nameExport: 'ObjectToTableName' },
+  // Library component definitions: short name → class export from integration-component-library
+  const libraryComponentDefs: Record<string, { className: string }> = {
+    'object-to-table': { className: 'ObjectToTable' },
   };
 
   // Resolved at build time: short name → { resolvedTagName, className }
@@ -347,7 +347,7 @@ export function transformComponentNames(options: PluginOptions): Plugin {
     apply: 'build',
 
     // ── buildStart: scan filesystem, validate, build maps ──────────────────
-    async buildStart() {
+    buildStart() {
       const projectConfig = readProjectConfig();
       const basePrefix = `px-int-${hash}-${resolveAcronym(projectConfig)}`;
       const predefined = resolvePredefinedComponents(projectConfig);
@@ -387,18 +387,21 @@ export function transformComponentNames(options: PluginOptions): Plugin {
         fileComponentMap.set(path.normalize(absPath), { componentName, uniqueName, className });
       }
 
-      // Resolve library component names at build time
+      // Resolve library component names at build time.
+      // Read the library's package.json version and compute tag names using the
+      // same deterministic formula the library uses, avoiding executing the
+      // library code (which may reference browser APIs unavailable in Node).
       try {
-        const lib: Record<string, unknown> =
-          // @ts-expect-error — integration-component-library is an optional peer dependency
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-          await import('integration-component-library');
-        for (const [shortName, { className, nameExport }] of Object.entries(libraryComponentDefs)) {
-          const resolvedTagName = lib[nameExport];
-          if (typeof resolvedTagName === 'string' && resolvedTagName.length > 0) {
-            componentMap[shortName] = resolvedTagName;
-            resolvedLibraryMap.set(shortName, { resolvedTagName, className });
-          }
+        const projectRequire = createRequire(path.resolve(process.cwd(), 'package.json'));
+        const libPkgPath = projectRequire.resolve('integration-component-library/package.json');
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const libPkg: { version?: string } = JSON.parse(readFileSync(libPkgPath, 'utf-8'));
+        const libVersion = libPkg.version ?? '0.0.0';
+        const normalizedVersion = libVersion.replace(/\./g, '-');
+        for (const [shortName, { className }] of Object.entries(libraryComponentDefs)) {
+          const resolvedTagName = `px-lib-${shortName.toLowerCase()}-v${normalizedVersion}`;
+          componentMap[shortName] = resolvedTagName;
+          resolvedLibraryMap.set(shortName, { resolvedTagName, className });
         }
       } catch {
         // integration-component-library not available; skip library component handling

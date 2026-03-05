@@ -1,6 +1,8 @@
 name: CI
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [develop, main]
 
@@ -35,6 +37,7 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
 
   version-check:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6

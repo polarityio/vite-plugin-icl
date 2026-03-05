@@ -182,8 +182,10 @@ function resolvePredefinedComponents(config: IntegrationConfig): Map<string, str
   if (!Array.isArray(components)) return map;
   for (const entry of components) {
     if (
-      typeof entry.type === 'string' && entry.type.trim().length > 0 &&
-      typeof entry.element === 'string' && entry.element.trim().length > 0
+      typeof entry.type === 'string' &&
+      entry.type.trim().length > 0 &&
+      typeof entry.element === 'string' &&
+      entry.element.trim().length > 0
     ) {
       map.set(entry.type.trim(), entry.element.trim());
     }
@@ -199,7 +201,12 @@ function resolvePredefinedComponents(config: IntegrationConfig): Map<string, str
 function resolveLibraryPackageJson(startDir: string): string {
   let dir = path.resolve(startDir);
   while (true) {
-    const candidate = path.join(dir, 'node_modules', 'integration-component-library', 'package.json');
+    const candidate = path.join(
+      dir,
+      'node_modules',
+      'integration-component-library',
+      'package.json',
+    );
     if (existsSync(candidate)) return candidate;
     const parent = path.dirname(dir);
     if (parent === dir) {
@@ -346,8 +353,7 @@ export function transformComponentNames(options: PluginOptions): Plugin {
   // substring matching against Vite's normalised file ids.
   const normalisedComponentsDir = componentsDir.replace(/\\/g, '/');
 
-  const isMatch = (normalisedId: string): boolean =>
-    normalisedId.includes(normalisedComponentsDir);
+  const isMatch = (normalisedId: string): boolean => normalisedId.includes(normalisedComponentsDir);
 
   // ── Build-time state (populated in buildStart) ───────────────────────────
   const hash = convertUUIDToBase36(randomUUID());
@@ -369,10 +375,7 @@ export function transformComponentNames(options: PluginOptions): Plugin {
   };
 
   // Resolved at build time: short name → { resolvedTagName, className }
-  const resolvedLibraryMap = new Map<
-    string,
-    { resolvedTagName: string; className: string }
-  >();
+  const resolvedLibraryMap = new Map<string, { resolvedTagName: string; className: string }>();
 
   return {
     name: 'transform-component-names',
@@ -388,8 +391,8 @@ export function transformComponentNames(options: PluginOptions): Plugin {
       if (additionalEntry && !existsSync(additionalEntry)) {
         throw new Error(
           `[vite-plugin-icl] additionalEntry file not found.\n` +
-          `  Path: ${additionalEntry}\n` +
-          `  Ensure the path is absolute and the file exists.`,
+            `  Path: ${additionalEntry}\n` +
+            `  Ensure the path is absolute and the file exists.`,
         );
       }
 
@@ -403,17 +406,18 @@ export function transformComponentNames(options: PluginOptions): Plugin {
         if (!isValidComponentFileName(componentName)) {
           throw new Error(
             `[vite-plugin-icl] Invalid component file name derived from file.\n` +
-            `  File:      ${absPath}\n` +
-            `  Derived:   "${componentName}"\n` +
-            `  Component file names must start with a lowercase letter and consist ` +
-            `only of lowercase letters, digits, hyphens, periods, or underscores. ` +
-            `They must not be one of the reserved HTML names (annotation-xml, ` +
-            `color-profile, etc.).\n` +
-            `  Rename the file so its derived name meets these requirements.`,
+              `  File:      ${absPath}\n` +
+              `  Derived:   "${componentName}"\n` +
+              `  Component file names must start with a lowercase letter and consist ` +
+              `only of lowercase letters, digits, hyphens, periods, or underscores. ` +
+              `They must not be one of the reserved HTML names (annotation-xml, ` +
+              `color-profile, etc.).\n` +
+              `  Rename the file so its derived name meets these requirements.`,
           );
         }
 
-        const uniqueName = predefined.get(componentName) ?? `${basePrefix}-${componentName}-${versionSlug}`;
+        const uniqueName =
+          predefined.get(componentName) ?? `${basePrefix}-${componentName}-${versionSlug}`;
         const className = componentNameToClassName(componentName);
 
         componentMap[componentName] = uniqueName;
@@ -443,8 +447,8 @@ export function transformComponentNames(options: PluginOptions): Plugin {
           const msg = e instanceof Error ? e.message : String(e);
           console.warn(
             `[vite-plugin-icl] integration-component-library not found; ` +
-            `library component rewrites (e.g. object-to-table) will be skipped.\n` +
-            `  Reason: ${msg}`,
+              `library component rewrites (e.g. object-to-table) will be skipped.\n` +
+              `  Reason: ${msg}`,
           );
         }
       }
@@ -470,13 +474,13 @@ export function transformComponentNames(options: PluginOptions): Plugin {
         if (!classExportPattern.test(code)) {
           throw new Error(
             `[vite-plugin-icl] Missing expected class export in component file.\n` +
-            `  File:     ${id}\n` +
-            `  Expected: a class or export named "${className}"\n` +
-            `  The component name "${fileEntry.componentName}" was derived from the ` +
-            `file path. The plugin expects the file to export a class named ` +
-            `"${className}" (PascalCase of the component name + "Component" suffix).\n` +
-            `  Either rename the class to "${className}" or rename the file to match ` +
-            `the existing class name.`,
+              `  File:     ${id}\n` +
+              `  Expected: a class or export named "${className}"\n` +
+              `  The component name "${fileEntry.componentName}" was derived from the ` +
+              `file path. The plugin expects the file to export a class named ` +
+              `"${className}" (PascalCase of the component name + "Component" suffix).\n` +
+              `  Either rename the class to "${className}" or rename the file to match ` +
+              `the existing class name.`,
           );
         }
 
@@ -564,4 +568,3 @@ export function transformComponentNames(options: PluginOptions): Plugin {
     },
   };
 }
-

@@ -231,7 +231,9 @@ describe('componentNameToClassName', () => {
   });
 
   it('converts a deeply nested name', () => {
-    expect(componentNameToClassName('forms--inputs--text-input')).toBe('FormsInputsTextInputComponent');
+    expect(componentNameToClassName('forms--inputs--text-input')).toBe(
+      'FormsInputsTextInputComponent',
+    );
   });
 
   it('always appends the Component suffix', () => {
@@ -244,7 +246,9 @@ describe('componentNameToClassName', () => {
 describe('transformComponentNames plugin', () => {
   it('has the correct plugin name', () => {
     withTempDir((dir) => {
-      expect(transformComponentNames({ componentsDir: dir }).name).toBe('transform-component-names');
+      expect(transformComponentNames({ componentsDir: dir }).name).toBe(
+        'transform-component-names',
+      );
     });
   });
 
@@ -266,11 +270,15 @@ describe('transformComponentNames plugin', () => {
         const outsideDir = path.join(os.tmpdir(), 'other', 'foo.ts');
         const wrongExt = path.join(dir, 'foo.js');
         // component transform fires for matching .ts files
-        expect(callTransform(plugin, 'export class MyComponentComponent {}', inside)).not.toBeNull();
+        expect(
+          callTransform(plugin, 'export class MyComponentComponent {}', inside),
+        ).not.toBeNull();
         // non-.ts files are ignored even if inside componentsDir
         expect(callTransform(plugin, 'export class MyComponentComponent {}', wrongExt)).toBeNull();
         // files outside componentsDir are ignored
-        expect(callTransform(plugin, 'export class MyComponentComponent {}', outsideDir)).toBeNull();
+        expect(
+          callTransform(plugin, 'export class MyComponentComponent {}', outsideDir),
+        ).toBeNull();
       });
     });
 
@@ -297,7 +305,10 @@ describe('transformComponentNames plugin', () => {
 
   it('skips library component rewriting when rewriteLibraryComponents is false', () => {
     withTempDir((dir) => {
-      const plugin = transformComponentNames({ componentsDir: dir, rewriteLibraryComponents: false });
+      const plugin = transformComponentNames({
+        componentsDir: dir,
+        rewriteLibraryComponents: false,
+      });
       callBuildStart(plugin);
       const file = path.join(dir, 'my-component.ts');
       writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
@@ -317,8 +328,9 @@ describe('transformComponentNames plugin', () => {
       if (!hadMockLib) {
         fs.mkdirSync(mockLibDir, { recursive: true });
       }
-      fs.writeFileSync(path.join(mockLibDir, 'package.json'),
-        JSON.stringify({ name: 'integration-component-library', version: MOCK_LIB_VERSION })
+      fs.writeFileSync(
+        path.join(mockLibDir, 'package.json'),
+        JSON.stringify({ name: 'integration-component-library', version: MOCK_LIB_VERSION }),
       );
     });
 
@@ -334,7 +346,9 @@ describe('transformComponentNames plugin', () => {
         callBuildStart(plugin);
         const file = path.join(dir, 'my-component.ts');
         writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
-        const result = callTransform(plugin, `<object-to-table .data=\${x}>`, file) as { code: string };
+        const result = callTransform(plugin, `<object-to-table .data=\${x}>`, file) as {
+          code: string;
+        };
         expect(result.code).toContain(`<${MOCK_OTT_NAME} .data=\${x}>`);
       });
     });
@@ -356,7 +370,11 @@ describe('transformComponentNames plugin', () => {
         callBuildStart(plugin);
         const file = path.join(dir, 'my-component.ts');
         writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
-        const result = callTransform(plugin, '<object-to-table .data=${x}></object-to-table>', file) as { code: string };
+        const result = callTransform(
+          plugin,
+          '<object-to-table .data=${x}></object-to-table>',
+          file,
+        ) as { code: string };
         expect(result.code).toContain(`<${MOCK_OTT_NAME} .data=\${x}>`);
         expect(result.code).toContain(`</${MOCK_OTT_NAME}>`);
       });
@@ -368,8 +386,12 @@ describe('transformComponentNames plugin', () => {
         callBuildStart(plugin);
         const file = path.join(dir, 'my-component.ts');
         writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
-        const result = callTransform(plugin, '<object-to-table></object-to-table>', file) as { code: string };
-        expect(result.code).toContain("import { ObjectToTable } from 'integration-component-library';");
+        const result = callTransform(plugin, '<object-to-table></object-to-table>', file) as {
+          code: string;
+        };
+        expect(result.code).toContain(
+          "import { ObjectToTable } from 'integration-component-library';",
+        );
       });
     });
 
@@ -379,18 +401,29 @@ describe('transformComponentNames plugin', () => {
         callBuildStart(plugin);
         const file = path.join(dir, 'my-component.ts');
         writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
-        const result = callTransform(plugin, '<object-to-table></object-to-table>', file) as { code: string };
+        const result = callTransform(plugin, '<object-to-table></object-to-table>', file) as {
+          code: string;
+        };
         expect(result.code).toContain(`customElements.get('${MOCK_OTT_NAME}')`);
-        expect(result.code).toContain(`customElements.define('${MOCK_OTT_NAME}', ObjectToTable as unknown as CustomElementConstructor)`);
+        expect(result.code).toContain(
+          `customElements.define('${MOCK_OTT_NAME}', ObjectToTable as unknown as CustomElementConstructor)`,
+        );
       });
     });
     it('does not rewrite library tags when rewriteLibraryComponents is false even if library is installed', () => {
       withTempDir((dir) => {
-        const plugin = transformComponentNames({ componentsDir: dir, rewriteLibraryComponents: false });
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          rewriteLibraryComponents: false,
+        });
         callBuildStart(plugin);
         const file = path.join(dir, 'my-component.ts');
         writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
-        const result = callTransform(plugin, '<object-to-table .data=${x}></object-to-table>', file);
+        const result = callTransform(
+          plugin,
+          '<object-to-table .data=${x}></object-to-table>',
+          file,
+        );
         expect(result).toBeNull();
       });
     });
@@ -405,7 +438,9 @@ describe('transformComponentNames plugin', () => {
         writeFile(dir, 'key-value.ts', src);
         const plugin = transformComponentNames({ componentsDir: dir });
         callBuildStart(plugin);
-        const result = callTransform(plugin, src, path.join(dir, 'key-value.ts')) as { code: string };
+        const result = callTransform(plugin, src, path.join(dir, 'key-value.ts')) as {
+          code: string;
+        };
         expect(result.code).toContain('px-int-');
         expect(result.code).toContain('-key-value-');
       });
@@ -417,7 +452,9 @@ describe('transformComponentNames plugin', () => {
         writeFile(dir, 'modals/save-modal.ts', src);
         const plugin = transformComponentNames({ componentsDir: dir });
         callBuildStart(plugin);
-        const result = callTransform(plugin, src, path.join(dir, 'modals', 'save-modal.ts')) as { code: string };
+        const result = callTransform(plugin, src, path.join(dir, 'modals', 'save-modal.ts')) as {
+          code: string;
+        };
         expect(result.code).toContain('-modals--save-modal-');
       });
     });
@@ -460,19 +497,31 @@ describe('transformComponentNames plugin', () => {
   describe('class export verification', () => {
     it('accepts a file with a matching class declaration', () => {
       withTempDir((dir) => {
-        const file = writeFile(dir, 'key-value.ts', 'export class KeyValueComponent extends LitElement {}');
+        const file = writeFile(
+          dir,
+          'key-value.ts',
+          'export class KeyValueComponent extends LitElement {}',
+        );
         const plugin = transformComponentNames({ componentsDir: dir });
         callBuildStart(plugin);
-        expect(() => callTransform(plugin, 'export class KeyValueComponent extends LitElement {}', file)).not.toThrow();
+        expect(() =>
+          callTransform(plugin, 'export class KeyValueComponent extends LitElement {}', file),
+        ).not.toThrow();
       });
     });
 
     it('accepts a file with an export { ClassName } re-export', () => {
       withTempDir((dir) => {
-        const file = writeFile(dir, 'key-value.ts', 'class KeyValueComponent {}\nexport { KeyValueComponent };');
+        const file = writeFile(
+          dir,
+          'key-value.ts',
+          'class KeyValueComponent {}\nexport { KeyValueComponent };',
+        );
         const plugin = transformComponentNames({ componentsDir: dir });
         callBuildStart(plugin);
-        expect(() => callTransform(plugin, 'class KeyValueComponent {}\nexport { KeyValueComponent };', file)).not.toThrow();
+        expect(() =>
+          callTransform(plugin, 'class KeyValueComponent {}\nexport { KeyValueComponent };', file),
+        ).not.toThrow();
       });
     });
 
@@ -481,12 +530,15 @@ describe('transformComponentNames plugin', () => {
         const file = writeFile(dir, 'key-value.ts', 'export class WrongName extends LitElement {}');
         const plugin = transformComponentNames({ componentsDir: dir });
         callBuildStart(plugin);
-        expect(() => callTransform(plugin, 'export class WrongName extends LitElement {}', file))
-          .toThrowError(/Missing expected class export/);
-        expect(() => callTransform(plugin, 'export class WrongName extends LitElement {}', file))
-          .toThrowError(/"KeyValueComponent"/);
-        expect(() => callTransform(plugin, 'export class WrongName extends LitElement {}', file))
-          .toThrowError(/rename the class/i);
+        expect(() =>
+          callTransform(plugin, 'export class WrongName extends LitElement {}', file),
+        ).toThrowError(/Missing expected class export/);
+        expect(() =>
+          callTransform(plugin, 'export class WrongName extends LitElement {}', file),
+        ).toThrowError(/"KeyValueComponent"/);
+        expect(() =>
+          callTransform(plugin, 'export class WrongName extends LitElement {}', file),
+        ).toThrowError(/rename the class/i);
       });
     });
   });
@@ -499,7 +551,9 @@ describe('transformComponentNames plugin', () => {
         const file = writeFile(dir, 'key-value.ts', 'export class KeyValueComponent {}');
         const plugin = transformComponentNames({ componentsDir: dir });
         callBuildStart(plugin);
-        const result = callTransform(plugin, 'export class KeyValueComponent {}', file) as { code: string };
+        const result = callTransform(plugin, 'export class KeyValueComponent {}', file) as {
+          code: string;
+        };
         expect(result.code).toContain("customElements.get('px-int-");
         expect(result.code).toContain('customElements.define(');
         expect(result.code).toContain('KeyValueComponent as unknown as CustomElementConstructor');
@@ -511,8 +565,12 @@ describe('transformComponentNames plugin', () => {
         const file = writeFile(dir, 'key-value.ts', 'export class KeyValueComponent {}');
         const plugin = transformComponentNames({ componentsDir: dir });
         callBuildStart(plugin);
-        const result = callTransform(plugin, 'export class KeyValueComponent {}', file) as { code: string };
-        expect(result.code).toMatch(/customElements\.get\('px-int-[a-z0-9]+-icl-key-value-v\d+-\d+-\d+'\)/);
+        const result = callTransform(plugin, 'export class KeyValueComponent {}', file) as {
+          code: string;
+        };
+        expect(result.code).toMatch(
+          /customElements\.get\('px-int-[a-z0-9]+-icl-key-value-v\d+-\d+-\d+'\)/,
+        );
       });
     });
 
@@ -521,7 +579,9 @@ describe('transformComponentNames plugin', () => {
         const file = writeFile(dir, 'key-value.ts', 'export class KeyValueComponent {}');
         const plugin = transformComponentNames({ componentsDir: dir });
         callBuildStart(plugin);
-        const result = callTransform(plugin, 'export class KeyValueComponent {}', file) as { code: string };
+        const result = callTransform(plugin, 'export class KeyValueComponent {}', file) as {
+          code: string;
+        };
         expect(result.code).not.toContain('import {');
         expect(result.code).not.toContain("from 'integration-component-library'");
       });
@@ -563,7 +623,9 @@ describe('transformComponentNames plugin', () => {
         const file = writeFile(dir, 'key-value.ts', 'export class KeyValueComponent {}');
         const plugin = transformComponentNames({ componentsDir: dir, autoImport: false });
         callBuildStart(plugin);
-        const result = callTransform(plugin, 'export class KeyValueComponent {}', file) as { code: string };
+        const result = callTransform(plugin, 'export class KeyValueComponent {}', file) as {
+          code: string;
+        };
         expect(result.code).toContain('customElements.define(');
       });
     });
@@ -590,8 +652,20 @@ describe('transformComponentNames plugin', () => {
         const pluginB = transformComponentNames({ componentsDir: dir });
         callBuildStart(pluginA);
         callBuildStart(pluginB);
-        const a = (callTransform(pluginA, 'export class KeyValueComponent {}', path.join(dir, 'key-value.ts')) as { code: string }).code;
-        const b = (callTransform(pluginB, 'export class KeyValueComponent {}', path.join(dir, 'key-value.ts')) as { code: string }).code;
+        const a = (
+          callTransform(
+            pluginA,
+            'export class KeyValueComponent {}',
+            path.join(dir, 'key-value.ts'),
+          ) as { code: string }
+        ).code;
+        const b = (
+          callTransform(
+            pluginB,
+            'export class KeyValueComponent {}',
+            path.join(dir, 'key-value.ts'),
+          ) as { code: string }
+        ).code;
         expect(a).not.toBe(b);
       });
     });
@@ -620,7 +694,9 @@ describe('transformComponentNames plugin', () => {
         const file = writeFile(dir, 'key-value.ts', 'export class KeyValueComponent {}');
         const plugin = transformComponentNames({ componentsDir: dir });
         callBuildStart(plugin);
-        const result = callTransform(plugin, 'export class KeyValueComponent {}', file) as { code: string };
+        const result = callTransform(plugin, 'export class KeyValueComponent {}', file) as {
+          code: string;
+        };
         expect(result.code).toContain('-icl-');
       });
     });
@@ -632,7 +708,9 @@ describe('transformComponentNames plugin', () => {
         const file = writeFile(dir, 'key-value.ts', 'export class KeyValueComponent {}');
         const plugin = transformComponentNames({ componentsDir: dir });
         callBuildStart(plugin);
-        const result = callTransform(plugin, 'export class KeyValueComponent {}', file) as { code: string };
+        const result = callTransform(plugin, 'export class KeyValueComponent {}', file) as {
+          code: string;
+        };
         expect(result.code).toContain('-tst-');
       });
     });
@@ -644,7 +722,9 @@ describe('transformComponentNames plugin', () => {
         const file = writeFile(dir, 'key-value.ts', 'export class KeyValueComponent {}');
         const plugin = transformComponentNames({ componentsDir: dir });
         callBuildStart(plugin);
-        const result = callTransform(plugin, 'export class KeyValueComponent {}', file) as { code: string };
+        const result = callTransform(plugin, 'export class KeyValueComponent {}', file) as {
+          code: string;
+        };
         expect(result.code).toContain('-allcaps-');
         expect(result.code).not.toContain('ALLCAPS');
       });
@@ -845,10 +925,13 @@ describe('transformComponentNames plugin', () => {
     it('uses the pre-assigned element name from config for a matching component type', () => {
       if (!hadDir) fs.mkdirSync(configDir, { recursive: true });
       const predefinedName = 'px-int-9b69kxiww6yoxs74n4auduspb-echo-wc-summary-v5-0-0';
-      fs.writeFileSync(configFile, JSON.stringify({
-        acronym: 'echo-wc',
-        webComponents: { components: [{ type: 'summary', element: predefinedName }] },
-      }));
+      fs.writeFileSync(
+        configFile,
+        JSON.stringify({
+          acronym: 'echo-wc',
+          webComponents: { components: [{ type: 'summary', element: predefinedName }] },
+        }),
+      );
       withTempDir((dir) => {
         const src = 'export class SummaryComponent {}';
         const file = writeFile(dir, 'summary.ts', src);
@@ -863,9 +946,12 @@ describe('transformComponentNames plugin', () => {
     it('does not use a generated hash-based name when a predefined name is supplied', () => {
       if (!hadDir) fs.mkdirSync(configDir, { recursive: true });
       const predefinedName = 'px-int-9b69kxiww6yoxs74n4auduspb-echo-wc-summary-v5-0-0';
-      fs.writeFileSync(configFile, JSON.stringify({
-        webComponents: { components: [{ type: 'summary', element: predefinedName }] },
-      }));
+      fs.writeFileSync(
+        configFile,
+        JSON.stringify({
+          webComponents: { components: [{ type: 'summary', element: predefinedName }] },
+        }),
+      );
       withTempDir((dir) => {
         const src = 'export class SummaryComponent {}';
         const file = writeFile(dir, 'summary.ts', src);
@@ -880,34 +966,51 @@ describe('transformComponentNames plugin', () => {
       if (!hadDir) fs.mkdirSync(configDir, { recursive: true });
       const summaryName = 'px-int-9b69kxiww6yoxs74n4auduspb-echo-wc-summary-v5-0-0';
       const detailsName = 'px-int-9b69kxiww6yoxs74n4auduspb-echo-wc-details-v5-0-0';
-      fs.writeFileSync(configFile, JSON.stringify({
-        webComponents: {
-          components: [
-            { type: 'summary', element: summaryName },
-            { type: 'details', element: detailsName },
-          ],
-        },
-      }));
+      fs.writeFileSync(
+        configFile,
+        JSON.stringify({
+          webComponents: {
+            components: [
+              { type: 'summary', element: summaryName },
+              { type: 'details', element: detailsName },
+            ],
+          },
+        }),
+      );
       withTempDir((dir) => {
         const summaryFile = writeFile(dir, 'summary.ts', 'export class SummaryComponent {}');
         const detailsFile = writeFile(dir, 'details.ts', 'export class DetailsComponent {}');
         const plugin = transformComponentNames({ componentsDir: dir });
         callBuildStart(plugin);
-        expect((callTransform(plugin, 'export class SummaryComponent {}', summaryFile) as { code: string }).code)
-          .toContain(`customElements.get('${summaryName}')`);
-        expect((callTransform(plugin, 'export class DetailsComponent {}', detailsFile) as { code: string }).code)
-          .toContain(`customElements.get('${detailsName}')`);
+        expect(
+          (
+            callTransform(plugin, 'export class SummaryComponent {}', summaryFile) as {
+              code: string;
+            }
+          ).code,
+        ).toContain(`customElements.get('${summaryName}')`);
+        expect(
+          (
+            callTransform(plugin, 'export class DetailsComponent {}', detailsFile) as {
+              code: string;
+            }
+          ).code,
+        ).toContain(`customElements.get('${detailsName}')`);
       });
     });
 
     it('rewrites tags using the predefined name', () => {
       if (!hadDir) fs.mkdirSync(configDir, { recursive: true });
       const predefinedName = 'px-int-9b69kxiww6yoxs74n4auduspb-echo-wc-summary-v5-0-0';
-      fs.writeFileSync(configFile, JSON.stringify({
-        webComponents: { components: [{ type: 'summary', element: predefinedName }] },
-      }));
+      fs.writeFileSync(
+        configFile,
+        JSON.stringify({
+          webComponents: { components: [{ type: 'summary', element: predefinedName }] },
+        }),
+      );
       withTempDir((dir) => {
-        const src = 'export class SummaryComponent {}\nconst t = \'<summary class="main"></summary>\';';
+        const src =
+          'export class SummaryComponent {}\nconst t = \'<summary class="main"></summary>\';';
         writeFile(dir, 'summary.ts', src);
         const plugin = transformComponentNames({ componentsDir: dir });
         callBuildStart(plugin);
@@ -919,32 +1022,40 @@ describe('transformComponentNames plugin', () => {
 
     it('still performs class export verification for predefined components', () => {
       if (!hadDir) fs.mkdirSync(configDir, { recursive: true });
-      fs.writeFileSync(configFile, JSON.stringify({
-        webComponents: { components: [{ type: 'summary', element: 'px-int-fixed-summary' }] },
-      }));
+      fs.writeFileSync(
+        configFile,
+        JSON.stringify({
+          webComponents: { components: [{ type: 'summary', element: 'px-int-fixed-summary' }] },
+        }),
+      );
       withTempDir((dir) => {
         const file = writeFile(dir, 'summary.ts', 'export class WrongName {}');
         const plugin = transformComponentNames({ componentsDir: dir });
         callBuildStart(plugin);
-        expect(() => callTransform(plugin, 'export class WrongName {}', file))
-          .toThrowError(/Missing expected class export/);
-        expect(() => callTransform(plugin, 'export class WrongName {}', file))
-          .toThrowError(/"SummaryComponent"/);
+        expect(() => callTransform(plugin, 'export class WrongName {}', file)).toThrowError(
+          /Missing expected class export/,
+        );
+        expect(() => callTransform(plugin, 'export class WrongName {}', file)).toThrowError(
+          /"SummaryComponent"/,
+        );
       });
     });
 
     it('ignores components array entries with missing or empty type/element fields', () => {
       if (!hadDir) fs.mkdirSync(configDir, { recursive: true });
-      fs.writeFileSync(configFile, JSON.stringify({
-        webComponents: {
-          components: [
-            { type: '', element: 'px-int-something' },
-            { type: 'summary' },
-            { element: 'px-int-something' },
-            {},
-          ],
-        },
-      }));
+      fs.writeFileSync(
+        configFile,
+        JSON.stringify({
+          webComponents: {
+            components: [
+              { type: '', element: 'px-int-something' },
+              { type: 'summary' },
+              { element: 'px-int-something' },
+              {},
+            ],
+          },
+        }),
+      );
       withTempDir((dir) => {
         const src = 'export class SummaryComponent {}';
         const file = writeFile(dir, 'summary.ts', src);
@@ -969,4 +1080,3 @@ describe('transformComponentNames plugin', () => {
     });
   });
 });
-

@@ -750,7 +750,7 @@ describe('transformComponentNames plugin', () => {
 
   // ─── predefined components (config/config.json components array) ──────────
 
-  describe('predefined components from config/config.json', () => {
+  describe('predefined components from config/config.json webComponents', () => {
     let configDir: string;
     let configFile: string;
     let hadDir: boolean;
@@ -771,7 +771,7 @@ describe('transformComponentNames plugin', () => {
       const predefinedName = 'px-int-9b69kxiww6yoxs74n4auduspb-echo-wc-summary-v5-0-0';
       fs.writeFileSync(configFile, JSON.stringify({
         acronym: 'echo-wc',
-        components: [{ type: 'summary', element: predefinedName }],
+        webComponents: { components: [{ type: 'summary', element: predefinedName }] },
       }));
       withTempDir((dir) => {
         const src = 'export class SummaryComponent {}';
@@ -788,7 +788,7 @@ describe('transformComponentNames plugin', () => {
       if (!hadDir) fs.mkdirSync(configDir, { recursive: true });
       const predefinedName = 'px-int-9b69kxiww6yoxs74n4auduspb-echo-wc-summary-v5-0-0';
       fs.writeFileSync(configFile, JSON.stringify({
-        components: [{ type: 'summary', element: predefinedName }],
+        webComponents: { components: [{ type: 'summary', element: predefinedName }] },
       }));
       withTempDir((dir) => {
         const src = 'export class SummaryComponent {}';
@@ -805,10 +805,12 @@ describe('transformComponentNames plugin', () => {
       const summaryName = 'px-int-9b69kxiww6yoxs74n4auduspb-echo-wc-summary-v5-0-0';
       const detailsName = 'px-int-9b69kxiww6yoxs74n4auduspb-echo-wc-details-v5-0-0';
       fs.writeFileSync(configFile, JSON.stringify({
-        components: [
-          { type: 'summary', element: summaryName },
-          { type: 'details', element: detailsName },
-        ],
+        webComponents: {
+          components: [
+            { type: 'summary', element: summaryName },
+            { type: 'details', element: detailsName },
+          ],
+        },
       }));
       withTempDir((dir) => {
         const summaryFile = writeFile(dir, 'summary.ts', 'export class SummaryComponent {}');
@@ -826,7 +828,7 @@ describe('transformComponentNames plugin', () => {
       if (!hadDir) fs.mkdirSync(configDir, { recursive: true });
       const predefinedName = 'px-int-9b69kxiww6yoxs74n4auduspb-echo-wc-summary-v5-0-0';
       fs.writeFileSync(configFile, JSON.stringify({
-        components: [{ type: 'summary', element: predefinedName }],
+        webComponents: { components: [{ type: 'summary', element: predefinedName }] },
       }));
       withTempDir((dir) => {
         const src = 'export class SummaryComponent {}\nconst t = \'<summary class="main"></summary>\';';
@@ -842,7 +844,7 @@ describe('transformComponentNames plugin', () => {
     it('still performs class export verification for predefined components', () => {
       if (!hadDir) fs.mkdirSync(configDir, { recursive: true });
       fs.writeFileSync(configFile, JSON.stringify({
-        components: [{ type: 'summary', element: 'px-int-fixed-summary' }],
+        webComponents: { components: [{ type: 'summary', element: 'px-int-fixed-summary' }] },
       }));
       withTempDir((dir) => {
         const file = writeFile(dir, 'summary.ts', 'export class WrongName {}');
@@ -858,12 +860,14 @@ describe('transformComponentNames plugin', () => {
     it('ignores components array entries with missing or empty type/element fields', () => {
       if (!hadDir) fs.mkdirSync(configDir, { recursive: true });
       fs.writeFileSync(configFile, JSON.stringify({
-        components: [
-          { type: '', element: 'px-int-something' },
-          { type: 'summary' },
-          { element: 'px-int-something' },
-          {},
-        ],
+        webComponents: {
+          components: [
+            { type: '', element: 'px-int-something' },
+            { type: 'summary' },
+            { element: 'px-int-something' },
+            {},
+          ],
+        },
       }));
       withTempDir((dir) => {
         const src = 'export class SummaryComponent {}';

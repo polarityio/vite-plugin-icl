@@ -135,7 +135,9 @@ export function componentNameToClassName(componentName: string): string {
 
 interface IntegrationConfig {
   acronym?: string;
-  components?: Array<{ type?: unknown; element?: unknown }>;
+  webComponents?: {
+    components?: Array<{ type?: unknown; element?: unknown }>;
+  };
 }
 
 /**
@@ -165,8 +167,8 @@ function resolveAcronym(config: IntegrationConfig): string {
 }
 
 /**
- * Reads the `components` array from the project config and returns a map of
- * component type → pre-assigned unique element name.
+ * Reads the `webComponents.components` array from the project config and
+ * returns a map of component type → pre-assigned unique element name.
  *
  * Only entries where both `type` and `element` are non-empty strings are
  * included. These components have externally assigned unique names (supplied
@@ -176,8 +178,9 @@ function resolveAcronym(config: IntegrationConfig): string {
  */
 function resolvePredefinedComponents(config: IntegrationConfig): Map<string, string> {
   const map = new Map<string, string>();
-  if (!Array.isArray(config.components)) return map;
-  for (const entry of config.components) {
+  const components = config.webComponents?.components;
+  if (!Array.isArray(components)) return map;
+  for (const entry of components) {
     if (
       typeof entry.type === 'string' && entry.type.trim().length > 0 &&
       typeof entry.element === 'string' && entry.element.trim().length > 0

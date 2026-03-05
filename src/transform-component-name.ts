@@ -389,8 +389,10 @@ export function transformComponentNames(options: PluginOptions): Plugin {
 
       // Resolve library component names at build time
       try {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const lib: Record<string, unknown> = await import('integration-component-library');
+        const lib: Record<string, unknown> =
+          // @ts-expect-error — integration-component-library is an optional peer dependency
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          await import('integration-component-library');
         for (const [shortName, { className, nameExport }] of Object.entries(libraryComponentDefs)) {
           const resolvedTagName = lib[nameExport];
           if (typeof resolvedTagName === 'string' && resolvedTagName.length > 0) {

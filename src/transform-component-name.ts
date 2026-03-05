@@ -445,20 +445,23 @@ export function transformComponentNames(options: PluginOptions): Plugin {
       // ── 2. Tag + string literal rewrites for all known components ─────────
       for (const [simple, unique] of Object.entries(componentMap)) {
         const openTagRegex = new RegExp(`<${simple}(\\s|>)`, 'g');
-        if (openTagRegex.test(transformedCode)) {
-          transformedCode = transformedCode.replace(openTagRegex, `<${unique}$1`);
+        const newOpen = transformedCode.replace(openTagRegex, `<${unique}$1`);
+        if (newOpen !== transformedCode) {
+          transformedCode = newOpen;
           hasChanges = true;
         }
 
         const closeTagRegex = new RegExp(`</${simple}>`, 'g');
-        if (closeTagRegex.test(transformedCode)) {
-          transformedCode = transformedCode.replace(closeTagRegex, `</${unique}>`);
+        const newClose = transformedCode.replace(closeTagRegex, `</${unique}>`);
+        if (newClose !== transformedCode) {
+          transformedCode = newClose;
           hasChanges = true;
         }
 
         const constRegex = new RegExp(`(['"\`])${simple}\\1`, 'g');
-        if (constRegex.test(transformedCode)) {
-          transformedCode = transformedCode.replace(constRegex, `$1${unique}$1`);
+        const newConst = transformedCode.replace(constRegex, `$1${unique}$1`);
+        if (newConst !== transformedCode) {
+          transformedCode = newConst;
           hasChanges = true;
         }
       }

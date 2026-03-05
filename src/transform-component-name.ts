@@ -332,19 +332,13 @@ export function transformComponentNames(options: PluginOptions): Plugin {
     'object-to-table': 'ObjectToTableName',
   };
 
-  let isBuild = false;
-
   return {
     name: 'transform-component-names',
     enforce: 'pre',
-
-    config(_config, { command }) {
-      isBuild = command === 'build';
-    },
+    apply: 'build',
 
     // ── buildStart: scan filesystem, validate, build maps ──────────────────
     buildStart() {
-      if (!isBuild) return;
       const projectConfig = readProjectConfig();
       const basePrefix = `px-int-${hash}-${resolveAcronym(projectConfig)}`;
       const predefined = resolvePredefinedComponents(projectConfig);
@@ -387,7 +381,7 @@ export function transformComponentNames(options: PluginOptions): Plugin {
 
     // ── transform: rewrite tags, verify exports, inject registration ───────
     transform(code: string, id: string): TransformResult | null {
-      if (!isBuild || !id.endsWith('.ts') || !isMatch(id.replace(/\\/g, '/'))) {
+      if (!id.endsWith('.ts') || !isMatch(id.replace(/\\/g, '/'))) {
         return null;
       }
 
@@ -467,7 +461,10 @@ export function transformComponentNames(options: PluginOptions): Plugin {
 
     // ── resolveId: virtual module resolution ────────────────────────────────
     resolveId(id: string) {
-      if (autoImport && id === VIRTUAL_COMPONENTS_ID) {
+      if (
+        autoImport &&
+        (id === VIRTUAL_COMPONENTS_ID || id.endsWith('/' + VIRTUAL_COMPONENTS_ID))
+      ) {
         return RESOLVED_VIRTUAL_ID;
       }
       return null;

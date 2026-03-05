@@ -623,6 +623,15 @@ describe('transformComponentNames plugin', () => {
       });
     });
 
+    it('resolves an absolute path ending with the virtual module id (Vite 7+)', () => {
+      withTempDir((dir) => {
+        const plugin = transformComponentNames({ componentsDir: dir });
+        expect(callResolveId(plugin, '/project/root/' + VIRTUAL_COMPONENTS_ID)).toBe(
+          '\0virtual:icl-components',
+        );
+      });
+    });
+
     it('returns null for any other module id', () => {
       withTempDir((dir) => {
         const plugin = transformComponentNames({ componentsDir: dir });

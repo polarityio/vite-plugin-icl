@@ -1,5 +1,8 @@
 # vite-plugin-icl
 
+[![CI](https://github.com/polarityio/vite-plugin-icl/actions/workflows/ci.yml/badge.svg)](https://github.com/polarityio/vite-plugin-icl/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/polarityio/vite-plugin-icl/branch/main/graph/badge.svg)](https://codecov.io/gh/polarityio/vite-plugin-icl)
+
 A Vite plugin for the **Polarity integration framework** that automatically transforms web component names into globally unique, versioned names at build time — and handles component discovery, registration, and bundling automatically.
 
 Write clean, readable component names in your source:

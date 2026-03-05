@@ -192,6 +192,25 @@ function resolvePredefinedComponents(config: IntegrationConfig): Map<string, str
 }
 
 /**
+ * Walk up from {@link startDir} looking for
+ * `node_modules/integration-component-library/package.json`.
+ * Returns the resolved path, or throws if not found.
+ */
+function resolveLibraryPackageJson(startDir: string): string {
+  let dir = path.resolve(startDir);
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  while (true) {
+    const candidate = path.join(dir, 'node_modules', 'integration-component-library', 'package.json');
+    if (existsSync(candidate)) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) {
+      throw new Error('integration-component-library is not installed');
+    }
+    dir = parent;
+  }
+}
+
+/**
  * Recursively collects all `.ts` files under {@link dir}, returning their
  * absolute paths.
  */
@@ -392,8 +411,10 @@ export function transformComponentNames(options: PluginOptions): Plugin {
       // same deterministic formula the library uses, avoiding executing the
       // library code (which may reference browser APIs unavailable in Node).
       try {
-        const projectRequire = createRequire(path.resolve(process.cwd(), 'package.json'));
-        const libPkgPath = projectRequire.resolve('integration-component-library/package.json');
+        // Walk up from the project root to find the library's package.json
+        // in node_modules. We cannot use require.resolve because the library's
+        // "exports" field may not expose package.json or may be ESM-only.
+        const libPkgPath = resolveLibraryPackageJson(process.cwd());
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const libPkg: { version?: string } = JSON.parse(readFileSync(libPkgPath, 'utf-8'));
         const libVersion = libPkg.version ?? '0.0.0';
@@ -403,8 +424,13 @@ export function transformComponentNames(options: PluginOptions): Plugin {
           componentMap[shortName] = resolvedTagName;
           resolvedLibraryMap.set(shortName, { resolvedTagName, className });
         }
-      } catch {
-        // integration-component-library not available; skip library component handling
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn(
+          `[vite-plugin-icl] integration-component-library not found; ` +
+          `library component rewrites (e.g. object-to-table) will be skipped.\n` +
+          `  Reason: ${msg}`,
+        );
       }
     },
 

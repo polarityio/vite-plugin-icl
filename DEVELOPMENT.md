@@ -36,7 +36,7 @@ vite-plugin-icl/
   dist/                           ← built output (not committed)
   package.json
   tsup.config.ts
-  vite.config.ts
+  vitest.config.ts
   tsconfig.json
   eslint.config.js
 ```
@@ -174,7 +174,7 @@ Runs on every file that Vite processes. It:
 1. **Guards** — returns `null` immediately if the file is not a `.ts` file inside `componentsDir`
 2. **Registration injection** — if the file is in `fileComponentMap`, verifies the expected class export exists (throws clearly if missing), then appends an inline `customElements.define(...)` block if not already present
 3. **Tag rewriting** — for every entry in `componentMap`, rewrites `<name>`, `</name>`, and string literals `'name'` to their unique equivalents
-4. **Library alias rewriting** — rewrites known library component aliases to their imported constant variable names
+4. **Library component injection** — for any resolved library component tag now present in the code, injects the corresponding `import` statement and `customElements.define(...)` registration block
 5. Returns the transformed code and a `null` source map, or `null` if nothing changed
 
 #### `resolveId` / `load`
@@ -195,9 +195,22 @@ This uses the standard browser `CustomElementRegistry` API and has no external d
 
 ### Predefined Components
 
-Some components have externally assigned unique names supplied by the Polarity framework (e.g. `summary`, `details`). These are stored in the `components` array in `config/config.json`.
+Some components have externally assigned unique names supplied by the Polarity framework (e.g. `summary`, `details`). These are stored in the `webComponents.components` array in `config/config.json`.
 
 During `buildStart`, `resolvePredefinedComponents` reads this array and builds a `Map<string, string>` of `type → element`. When the scanner encounters a file whose derived name matches a key in this map, it uses the pre-assigned `element` value instead of generating one.
+
+The config structure is:
+
+```json
+{
+  "acronym": "echo-wc",
+  "webComponents": {
+    "components": [
+      { "type": "summary", "element": "px-int-...-summary-v5-0-0" }
+    ]
+  }
+}
+```
 
 Predefined components:
 - **Skip** the `isValidCustomElementName` hyphen requirement (single-word names like `summary` are allowed)
@@ -207,20 +220,24 @@ Predefined components:
 
 ### Library Component Aliases
 
-The `libraryComponentMap` in the plugin is a hardcoded `Record<string, string>` mapping short alias names to imported constant variable names:
+The `libraryComponentDefs` in the plugin is a hardcoded `Record<string, { className: string }>` mapping short alias names to their class export names from `integration-component-library`:
 
 ```ts
-const libraryComponentMap: Record<string, string> = {
-  'object-to-table': 'ObjectToTableName',
+const libraryComponentDefs: Record<string, { className: string }> = {
+  'object-to-table': { className: 'ObjectToTable' },
 };
 ```
 
-Tags matching an alias are rewritten to template expression syntax:
+During `buildStart`, the plugin reads the library's `package.json` version and computes a resolved tag name using the formula `px-lib-{name}-v{version}` (with dots replaced by hyphens). These resolved names are stored in `resolvedLibraryMap` and added to `componentMap`, so tag rewriting handles them alongside project components.
 
-- `<object-to-table>` → `<${ObjectToTableName}>`
-- `</object-to-table>` → `</${ObjectToTableName}>`
+During `transform`, after tag rewriting has replaced library alias tags with their resolved versioned names, the plugin injects:
 
-This allows Lit's `staticHtml` to use the constant as a tag name without `unsafeStatic`. See [Adding a Library Component Alias](#adding-a-library-component-alias) to extend this map.
+1. An `import { ClassName } from 'integration-component-library'` statement
+2. A `customElements.define(...)` registration block
+
+For example, `<object-to-table>` is rewritten to `<px-lib-object-to-table-v1-0-0>`, and the file receives the corresponding import and registration.
+
+If `integration-component-library` is not installed, library component rewriting is skipped with a console warning. See [Adding a Library Component Alias](#adding-a-library-component-alias) to extend this map.
 
 ---
 
@@ -250,7 +267,9 @@ The `IntegrationConfig` interface describes the expected shape:
 ```ts
 interface IntegrationConfig {
   acronym?: string;
-  components?: Array<{ type?: unknown; element?: unknown }>;
+  webComponents?: {
+    components?: Array<{ type?: unknown; element?: unknown }>;
+  };
 }
 ```
 
@@ -295,15 +314,17 @@ npm run test:watch
 
 ## Adding a Library Component Alias
 
-Open `src/transform-component-name.ts` and add an entry to the `libraryComponentMap` inside the `transformComponentNames` function:
+Open `src/transform-component-name.ts` and add an entry to the `libraryComponentDefs` inside the `transformComponentNames` function:
 
 ```ts
-const libraryComponentMap: Record<string, string> = {
-  'object-to-table': 'ObjectToTableName',
-  'p-tag': 'PTagName',          // ← add new aliases here
-  'p-link': 'PLinkName',
+const libraryComponentDefs: Record<string, { className: string }> = {
+  'object-to-table': { className: 'ObjectToTable' },
+  'p-tag': { className: 'PTag' },          // ← add new aliases here
+  'p-link': { className: 'PLink' },
 };
 ```
+
+The `className` must match the named export from `integration-component-library`.
 
 Then add corresponding test cases to `src/transform-component-name.test.ts` in the `library component transforms` describe block.
 

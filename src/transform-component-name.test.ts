@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Plugin } from 'vite';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -429,7 +429,104 @@ describe('transformComponentNames plugin', () => {
     });
   });
 
-  // ─── componentsDir: filesystem scanning ───────────────────────────────────
+  // ─── user-provided libraryComponents option ─────────────────────────────────
+
+  describe('libraryComponents option', () => {
+    const MOCK_LIB_VERSION = '1.0.0';
+    const mockLibDir = path.resolve(process.cwd(), 'node_modules', 'integration-component-library');
+    let hadMockLib: boolean;
+
+    beforeEach(() => {
+      hadMockLib = fs.existsSync(mockLibDir);
+      if (!hadMockLib) {
+        fs.mkdirSync(mockLibDir, { recursive: true });
+      }
+      fs.writeFileSync(
+        path.join(mockLibDir, 'package.json'),
+        JSON.stringify({ name: 'integration-component-library', version: MOCK_LIB_VERSION }),
+      );
+    });
+
+    afterEach(() => {
+      if (!hadMockLib) {
+        fs.rmSync(mockLibDir, { recursive: true, force: true });
+      }
+    });
+
+    it('resolves and rewrites a user-provided library component', () => {
+      withTempDir((dir) => {
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          libraryComponents: {
+            'data-grid': { className: 'DataGrid' },
+          },
+        });
+        callBuildStart(plugin);
+        const file = path.join(dir, 'my-component.ts');
+        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
+        const result = callTransform(plugin, '<data-grid></data-grid>', file) as {
+          code: string;
+        };
+        expect(result.code).toContain('px-lib-data-grid-v1-0-0');
+        expect(result.code).toContain("import { DataGrid } from 'integration-component-library';");
+        expect(result.code).toContain("customElements.get('px-lib-data-grid-v1-0-0')");
+      });
+    });
+
+    it('uses user value and warns when overriding a built-in definition', () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        withTempDir((dir) => {
+          const plugin = transformComponentNames({
+            componentsDir: dir,
+            libraryComponents: {
+              'object-to-table': { className: 'MyCustomObjectToTable' },
+            },
+          });
+          callBuildStart(plugin);
+
+          expect(warnSpy).toHaveBeenCalledWith(
+            expect.stringContaining('overrides built-in definition'),
+          );
+
+          const file = path.join(dir, 'my-component.ts');
+          writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
+          const result = callTransform(plugin, '<object-to-table></object-to-table>', file) as {
+            code: string;
+          };
+          expect(result.code).toContain(
+            "import { MyCustomObjectToTable } from 'integration-component-library';",
+          );
+        });
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('preserves built-in defs alongside user-provided defs', () => {
+      withTempDir((dir) => {
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          libraryComponents: {
+            'status-badge': { className: 'StatusBadge' },
+          },
+        });
+        callBuildStart(plugin);
+        const file = path.join(dir, 'my-component.ts');
+        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
+
+        const ottResult = callTransform(plugin, '<object-to-table></object-to-table>', file) as {
+          code: string;
+        };
+        expect(ottResult.code).toContain('px-lib-object-to-table-v1-0-0');
+
+        const badgeResult = callTransform(plugin, '<status-badge></status-badge>', file) as {
+          code: string;
+        };
+        expect(badgeResult.code).toContain('px-lib-status-badge-v1-0-0');
+      });
+    });
+  });
 
   describe('componentsDir — filesystem scanning', () => {
     it('builds the component map from files on disk', () => {

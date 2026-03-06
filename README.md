@@ -30,6 +30,7 @@ They are transformed into collision-proof names during the build:
 - [Acronym Configuration](#acronym-configuration)
 - [System Components](#system-components)
 - [Library Component Aliases](#library-component-aliases)
+- [Custom Library Components](#custom-library-components)
 - [Plugin Options](#plugin-options)
 - [Contributing](#contributing)
 
@@ -270,6 +271,32 @@ If `integration-component-library` is not installed, library component rewriting
 
 ---
 
+## Custom Library Components
+
+If `integration-component-library` ships new components that the plugin doesn't know about yet, you can register them yourself with the `libraryComponents` option. Each key is the short tag name (kebab-case) and the value specifies the named class export from the library:
+
+```ts
+// vite.config.ts
+transformComponentNames({
+  componentsDir: resolve(__dirname, 'src/web-components'),
+  libraryComponents: {
+    'data-grid': { className: 'DataGrid' },
+    'status-badge': { className: 'StatusBadge' },
+  },
+})
+```
+
+These entries are merged with the plugin's built-in definitions (e.g. `object-to-table`). The plugin then handles them identically — rewriting tags, injecting imports, and registering them via `customElements.define(...)`.
+
+| Write this | Transforms to |
+|---|---|
+| `<data-grid>` | `<px-lib-data-grid-v1-0-0>` |
+| `<status-badge>` | `<px-lib-status-badge-v1-0-0>` |
+
+If a key in `libraryComponents` conflicts with a built-in definition, the user-provided value takes precedence and the plugin emits a build warning.
+
+---
+
 ## Plugin Options
 
 ### `componentsDir` *(required)*
@@ -321,6 +348,20 @@ When `true`, the plugin rewrites `integration-component-library` component tags 
 Set to `false` to handle library components yourself.
 
 See [Library Component Aliases](#library-component-aliases) for details.
+
+---
+
+### `libraryComponents`
+
+| Type | Default |
+|---|---|
+| `Record<string, { className: string }>` | — |
+
+Additional library component definitions to register alongside the built-in ones. Each key is the short tag name (kebab-case) and the value specifies the named export from `integration-component-library`.
+
+User-provided entries are merged with the built-in definitions. If a key conflicts with a built-in definition, the user-provided value takes precedence and a build warning is emitted.
+
+See [Custom Library Components](#custom-library-components) for a full example.
 
 ---
 

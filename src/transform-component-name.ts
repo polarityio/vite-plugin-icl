@@ -326,6 +326,27 @@ export interface PluginOptions {
    * @default true
    */
   rewriteLibraryComponents?: boolean;
+
+  /**
+   * Additional library component definitions to register alongside the
+   * built-in ones. Each key is the short tag name (kebab-case) and the value
+   * specifies the named export (`className`) from
+   * `integration-component-library`.
+   *
+   * These entries are merged with the plugin's built-in definitions. If a key
+   * conflicts with a built-in definition, the user-provided value takes
+   * precedence and a build warning is emitted.
+   *
+   * @example
+   * transformComponentNames({
+   *   componentsDir: resolve(__dirname, 'src/web-components'),
+   *   libraryComponents: {
+   *     'data-grid': { className: 'DataGrid' },
+   *     'status-badge': { className: 'StatusBadge' },
+   *   },
+   * })
+   */
+  libraryComponents?: Record<string, { className: string }>;
 }
 
 // ─── Plugin ───────────────────────────────────────────────────────────────────
@@ -346,6 +367,7 @@ export function transformComponentNames(options: PluginOptions): Plugin {
     autoImport = true,
     additionalEntry,
     rewriteLibraryComponents = true,
+    libraryComponents,
   } = options;
 
   // ── File-matching setup ──────────────────────────────────────────────────
@@ -373,6 +395,20 @@ export function transformComponentNames(options: PluginOptions): Plugin {
   const libraryComponentDefs: Record<string, { className: string }> = {
     'object-to-table': { className: 'ObjectToTable' },
   };
+
+  // Merge user-provided library component definitions, warning on conflicts.
+  if (libraryComponents) {
+    for (const [shortName, def] of Object.entries(libraryComponents)) {
+      if (shortName in libraryComponentDefs) {
+        console.warn(
+          `[vite-plugin-icl] libraryComponents: user-provided definition for ` +
+            `"${shortName}" overrides built-in definition ` +
+            `(className "${libraryComponentDefs[shortName].className}" → "${def.className}").`,
+        );
+      }
+      libraryComponentDefs[shortName] = def;
+    }
+  }
 
   // Resolved at build time: short name → { resolvedTagName, className }
   const resolvedLibraryMap = new Map<string, { resolvedTagName: string; className: string }>();

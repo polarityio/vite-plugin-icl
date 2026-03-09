@@ -396,20 +396,6 @@ export function transformComponentNames(options: PluginOptions): Plugin {
     'object-to-table': { className: 'ObjectToTable' },
   };
 
-  // Merge user-provided library component definitions, warning on conflicts.
-  if (libraryComponents) {
-    for (const [shortName, def] of Object.entries(libraryComponents)) {
-      if (shortName in libraryComponentDefs) {
-        console.warn(
-          `[vite-plugin-icl] libraryComponents: user-provided definition for ` +
-            `"${shortName}" overrides built-in definition ` +
-            `(className "${libraryComponentDefs[shortName].className}" → "${def.className}").`,
-        );
-      }
-      libraryComponentDefs[shortName] = def;
-    }
-  }
-
   // Resolved at build time: short name → { resolvedTagName, className }
   const resolvedLibraryMap = new Map<string, { resolvedTagName: string; className: string }>();
 
@@ -465,6 +451,20 @@ export function transformComponentNames(options: PluginOptions): Plugin {
       // same deterministic formula the library uses, avoiding executing the
       // library code (which may reference browser APIs unavailable in Node).
       if (rewriteLibraryComponents) {
+        // Merge user-provided library component definitions, warning on conflicts.
+        if (libraryComponents) {
+          for (const [shortName, def] of Object.entries(libraryComponents)) {
+            if (shortName in libraryComponentDefs) {
+              this.warn(
+                `libraryComponents: user-provided definition for ` +
+                  `"${shortName}" overrides built-in definition ` +
+                  `(className "${libraryComponentDefs[shortName].className}" → "${def.className}").`,
+              );
+            }
+            libraryComponentDefs[shortName] = def;
+          }
+        }
+
         try {
           // Walk up from the project root to find the library's package.json
           // in node_modules. We cannot use require.resolve because the library's
@@ -481,8 +481,8 @@ export function transformComponentNames(options: PluginOptions): Plugin {
           }
         } catch (e: unknown) {
           const msg = e instanceof Error ? e.message : String(e);
-          console.warn(
-            `[vite-plugin-icl] integration-component-library not found; ` +
+          this.warn(
+            `integration-component-library not found; ` +
               `library component rewrites (e.g. object-to-table) will be skipped.\n` +
               `  Reason: ${msg}`,
           );

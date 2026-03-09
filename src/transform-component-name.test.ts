@@ -20,9 +20,9 @@ function callTransform(plugin: Plugin, code: string, id: string): unknown {
   return (plugin.transform as (code: string, id: string) => unknown).call({} as never, code, id);
 }
 
-function callBuildStart(plugin: Plugin): void {
+function callBuildStart(plugin: Plugin, context?: Record<string, unknown>): void {
   if (typeof plugin.buildStart !== 'function') return;
-  (plugin.buildStart as () => void).call({} as never);
+  (plugin.buildStart as () => void).call((context ?? { warn: () => {} }) as never);
 }
 
 function callResolveId(plugin: Plugin, id: string): string | null {
@@ -321,15 +321,19 @@ describe('transformComponentNames plugin', () => {
     const MOCK_LIB_VERSION = '1.0.0';
     const MOCK_OTT_NAME = 'px-lib-object-to-table-v1-0-0';
     const mockLibDir = path.resolve(process.cwd(), 'node_modules', 'integration-component-library');
+    const mockPkgPath = path.join(mockLibDir, 'package.json');
     let hadMockLib: boolean;
+    let originalPkgJson: string | undefined;
 
     beforeEach(() => {
       hadMockLib = fs.existsSync(mockLibDir);
       if (!hadMockLib) {
         fs.mkdirSync(mockLibDir, { recursive: true });
+      } else if (fs.existsSync(mockPkgPath)) {
+        originalPkgJson = fs.readFileSync(mockPkgPath, 'utf-8');
       }
       fs.writeFileSync(
-        path.join(mockLibDir, 'package.json'),
+        mockPkgPath,
         JSON.stringify({ name: 'integration-component-library', version: MOCK_LIB_VERSION }),
       );
     });
@@ -337,6 +341,9 @@ describe('transformComponentNames plugin', () => {
     afterEach(() => {
       if (!hadMockLib) {
         fs.rmSync(mockLibDir, { recursive: true, force: true });
+      } else if (originalPkgJson !== undefined) {
+        fs.writeFileSync(mockPkgPath, originalPkgJson);
+        originalPkgJson = undefined;
       }
     });
 
@@ -434,15 +441,19 @@ describe('transformComponentNames plugin', () => {
   describe('libraryComponents option', () => {
     const MOCK_LIB_VERSION = '1.0.0';
     const mockLibDir = path.resolve(process.cwd(), 'node_modules', 'integration-component-library');
+    const mockPkgPath = path.join(mockLibDir, 'package.json');
     let hadMockLib: boolean;
+    let originalPkgJson: string | undefined;
 
     beforeEach(() => {
       hadMockLib = fs.existsSync(mockLibDir);
       if (!hadMockLib) {
         fs.mkdirSync(mockLibDir, { recursive: true });
+      } else if (fs.existsSync(mockPkgPath)) {
+        originalPkgJson = fs.readFileSync(mockPkgPath, 'utf-8');
       }
       fs.writeFileSync(
-        path.join(mockLibDir, 'package.json'),
+        mockPkgPath,
         JSON.stringify({ name: 'integration-component-library', version: MOCK_LIB_VERSION }),
       );
     });
@@ -450,6 +461,9 @@ describe('transformComponentNames plugin', () => {
     afterEach(() => {
       if (!hadMockLib) {
         fs.rmSync(mockLibDir, { recursive: true, force: true });
+      } else if (originalPkgJson !== undefined) {
+        fs.writeFileSync(mockPkgPath, originalPkgJson);
+        originalPkgJson = undefined;
       }
     });
 
@@ -474,33 +488,29 @@ describe('transformComponentNames plugin', () => {
     });
 
     it('uses user value and warns when overriding a built-in definition', () => {
-      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      try {
-        withTempDir((dir) => {
-          const plugin = transformComponentNames({
-            componentsDir: dir,
-            libraryComponents: {
-              'object-to-table': { className: 'MyCustomObjectToTable' },
-            },
-          });
-          callBuildStart(plugin);
-
-          expect(warnSpy).toHaveBeenCalledWith(
-            expect.stringContaining('overrides built-in definition'),
-          );
-
-          const file = path.join(dir, 'my-component.ts');
-          writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
-          const result = callTransform(plugin, '<object-to-table></object-to-table>', file) as {
-            code: string;
-          };
-          expect(result.code).toContain(
-            "import { MyCustomObjectToTable } from 'integration-component-library';",
-          );
+      withTempDir((dir) => {
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          libraryComponents: {
+            'object-to-table': { className: 'MyCustomObjectToTable' },
+          },
         });
-      } finally {
-        warnSpy.mockRestore();
-      }
+        const warnFn = vi.fn();
+        callBuildStart(plugin, { warn: warnFn });
+
+        expect(warnFn).toHaveBeenCalledWith(
+          expect.stringContaining('overrides built-in definition'),
+        );
+
+        const file = path.join(dir, 'my-component.ts');
+        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
+        const result = callTransform(plugin, '<object-to-table></object-to-table>', file) as {
+          code: string;
+        };
+        expect(result.code).toContain(
+          "import { MyCustomObjectToTable } from 'integration-component-library';",
+        );
+      });
     });
 
     it('preserves built-in defs alongside user-provided defs', () => {

@@ -22,7 +22,8 @@ function callTransform(plugin: Plugin, code: string, id: string): unknown {
 
 function callBuildStart(plugin: Plugin, context?: Record<string, unknown>): void {
   if (typeof plugin.buildStart !== 'function') return;
-  (plugin.buildStart as () => void).call((context ?? { warn: () => {} }) as never);
+  const defaultCtx = { warn: () => {}, info: () => {} };
+  (plugin.buildStart as () => void).call({ ...defaultCtx, ...context } as never);
 }
 
 function callResolveId(plugin: Plugin, id: string): string | null {
@@ -255,6 +256,19 @@ describe('transformComponentNames plugin', () => {
   it('is applied only during build', () => {
     withTempDir((dir) => {
       expect(transformComponentNames({ componentsDir: dir }).apply).toBe('build');
+    });
+  });
+
+  it('emits an info message with plugin name and version on buildStart', () => {
+    withTempDir((dir) => {
+      const plugin = transformComponentNames({ componentsDir: dir });
+      const infoFn = vi.fn();
+      callBuildStart(plugin, { info: infoFn });
+
+      expect(infoFn).toHaveBeenCalledOnce();
+      expect(infoFn).toHaveBeenCalledWith(
+        expect.stringMatching(/^vite-plugin-icl v\d+\.\d+\.\d+$/),
+      );
     });
   });
 

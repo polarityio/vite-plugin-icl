@@ -6,7 +6,7 @@ import path from 'node:path';
 
 const require = createRequire(import.meta.url);
 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-const pkg: { version?: string } = require('../package.json');
+const pkg: { name?: string; version?: string } = require('../package.json');
 
 // ─── Virtual module ───────────────────────────────────────────────────────────
 
@@ -409,6 +409,10 @@ export function transformComponentNames(options: PluginOptions): Plugin {
 
     // ── buildStart: scan filesystem, validate, build maps ──────────────────
     buildStart() {
+      const pluginName = pkg.name ?? 'vite-plugin-icl';
+      const pluginVersion = pkg.version ?? 'unknown';
+      this.info(`${pluginName} v${pluginVersion}`);
+
       // Clear prior state so repeated builds (e.g. watch mode) are idempotent.
       for (const key of Object.keys(componentMap)) {
         delete componentMap[key];

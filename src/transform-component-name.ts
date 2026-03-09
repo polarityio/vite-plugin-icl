@@ -391,8 +391,8 @@ export function transformComponentNames(options: PluginOptions): Plugin {
     { componentName: string; uniqueName: string; className: string }
   >();
 
-  // Library component definitions: short name → class export from integration-component-library
-  const libraryComponentDefs: Record<string, { className: string }> = {
+  // Built-in library component definitions (immutable baseline).
+  const builtinLibraryComponentDefs: Readonly<Record<string, { className: string }>> = {
     'object-to-table': { className: 'ObjectToTable' },
   };
 
@@ -451,17 +451,20 @@ export function transformComponentNames(options: PluginOptions): Plugin {
       // same deterministic formula the library uses, avoiding executing the
       // library code (which may reference browser APIs unavailable in Node).
       if (rewriteLibraryComponents) {
-        // Merge user-provided library component definitions, warning on conflicts.
+        // Build a fresh merged defs object each buildStart to stay idempotent.
+        const mergedDefs: Record<string, { className: string }> = {
+          ...builtinLibraryComponentDefs,
+        };
         if (libraryComponents) {
           for (const [shortName, def] of Object.entries(libraryComponents)) {
-            if (Object.hasOwn(libraryComponentDefs, shortName)) {
+            if (Object.hasOwn(builtinLibraryComponentDefs, shortName)) {
               this.warn(
                 `libraryComponents: user-provided definition for ` +
                   `"${shortName}" overrides built-in definition ` +
-                  `(className "${libraryComponentDefs[shortName].className}" → "${def.className}").`,
+                  `(className "${builtinLibraryComponentDefs[shortName].className}" → "${def.className}").`,
               );
             }
-            libraryComponentDefs[shortName] = def;
+            mergedDefs[shortName] = def;
           }
         }
 
@@ -474,7 +477,7 @@ export function transformComponentNames(options: PluginOptions): Plugin {
           const libPkg: { version?: string } = JSON.parse(readFileSync(libPkgPath, 'utf-8'));
           const libVersion = libPkg.version ?? '0.0.0';
           const normalizedVersion = libVersion.replace(/\./g, '-');
-          for (const [shortName, { className }] of Object.entries(libraryComponentDefs)) {
+          for (const [shortName, { className }] of Object.entries(mergedDefs)) {
             const resolvedTagName = `px-lib-${shortName.toLowerCase()}-v${normalizedVersion}`;
             componentMap[shortName] = resolvedTagName;
             resolvedLibraryMap.set(shortName, { resolvedTagName, className });

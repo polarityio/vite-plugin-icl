@@ -454,7 +454,7 @@ export function transformComponentNames(options: PluginOptions): Plugin {
         // Merge user-provided library component definitions, warning on conflicts.
         if (libraryComponents) {
           for (const [shortName, def] of Object.entries(libraryComponents)) {
-            if (shortName in libraryComponentDefs) {
+            if (Object.hasOwn(libraryComponentDefs, shortName)) {
               this.warn(
                 `libraryComponents: user-provided definition for ` +
                   `"${shortName}" overrides built-in definition ` +

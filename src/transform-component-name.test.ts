@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Plugin } from 'vite';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -20,9 +20,10 @@ function callTransform(plugin: Plugin, code: string, id: string): unknown {
   return (plugin.transform as (code: string, id: string) => unknown).call({} as never, code, id);
 }
 
-function callBuildStart(plugin: Plugin): void {
+function callBuildStart(plugin: Plugin, context?: Record<string, unknown>): void {
   if (typeof plugin.buildStart !== 'function') return;
-  (plugin.buildStart as () => void).call({} as never);
+  const defaultCtx = { warn: () => {}, info: () => {} };
+  (plugin.buildStart as () => void).call({ ...defaultCtx, ...context } as never);
 }
 
 function callResolveId(plugin: Plugin, id: string): string | null {
@@ -258,6 +259,19 @@ describe('transformComponentNames plugin', () => {
     });
   });
 
+  it('emits an info message with plugin name and version on buildStart', () => {
+    withTempDir((dir) => {
+      const plugin = transformComponentNames({ componentsDir: dir });
+      const infoFn = vi.fn();
+      callBuildStart(plugin, { info: infoFn });
+
+      expect(infoFn).toHaveBeenCalledOnce();
+      expect(infoFn).toHaveBeenCalledWith(
+        expect.stringMatching(/^vite-plugin-icl v\d+\.\d+\.\d+$/),
+      );
+    });
+  });
+
   // ─── file filtering ────────────────────────────────────────────────────────
 
   describe('file filtering', () => {
@@ -321,15 +335,21 @@ describe('transformComponentNames plugin', () => {
     const MOCK_LIB_VERSION = '1.0.0';
     const MOCK_OTT_NAME = 'px-lib-object-to-table-v1-0-0';
     const mockLibDir = path.resolve(process.cwd(), 'node_modules', 'integration-component-library');
+    const mockPkgPath = path.join(mockLibDir, 'package.json');
     let hadMockLib: boolean;
+    let hadPkgJson: boolean;
+    let originalPkgJson: string | undefined;
 
     beforeEach(() => {
       hadMockLib = fs.existsSync(mockLibDir);
+      hadPkgJson = fs.existsSync(mockPkgPath);
       if (!hadMockLib) {
         fs.mkdirSync(mockLibDir, { recursive: true });
+      } else if (hadPkgJson) {
+        originalPkgJson = fs.readFileSync(mockPkgPath, 'utf-8');
       }
       fs.writeFileSync(
-        path.join(mockLibDir, 'package.json'),
+        mockPkgPath,
         JSON.stringify({ name: 'integration-component-library', version: MOCK_LIB_VERSION }),
       );
     });
@@ -337,6 +357,11 @@ describe('transformComponentNames plugin', () => {
     afterEach(() => {
       if (!hadMockLib) {
         fs.rmSync(mockLibDir, { recursive: true, force: true });
+      } else if (hadPkgJson && originalPkgJson !== undefined) {
+        fs.writeFileSync(mockPkgPath, originalPkgJson);
+        originalPkgJson = undefined;
+      } else if (!hadPkgJson) {
+        fs.rmSync(mockPkgPath, { force: true });
       }
     });
 
@@ -429,7 +454,243 @@ describe('transformComponentNames plugin', () => {
     });
   });
 
-  // ─── componentsDir: filesystem scanning ───────────────────────────────────
+  // ─── user-provided libraryComponents option ─────────────────────────────────
+
+  describe('libraryComponents option', () => {
+    const MOCK_LIB_VERSION = '1.0.0';
+    const mockLibDir = path.resolve(process.cwd(), 'node_modules', 'integration-component-library');
+    const mockPkgPath = path.join(mockLibDir, 'package.json');
+    let hadMockLib: boolean;
+    let hadPkgJson: boolean;
+    let originalPkgJson: string | undefined;
+
+    beforeEach(() => {
+      hadMockLib = fs.existsSync(mockLibDir);
+      hadPkgJson = fs.existsSync(mockPkgPath);
+      if (!hadMockLib) {
+        fs.mkdirSync(mockLibDir, { recursive: true });
+      } else if (hadPkgJson) {
+        originalPkgJson = fs.readFileSync(mockPkgPath, 'utf-8');
+      }
+      fs.writeFileSync(
+        mockPkgPath,
+        JSON.stringify({ name: 'integration-component-library', version: MOCK_LIB_VERSION }),
+      );
+    });
+
+    afterEach(() => {
+      if (!hadMockLib) {
+        fs.rmSync(mockLibDir, { recursive: true, force: true });
+      } else if (hadPkgJson && originalPkgJson !== undefined) {
+        fs.writeFileSync(mockPkgPath, originalPkgJson);
+        originalPkgJson = undefined;
+      } else if (!hadPkgJson) {
+        fs.rmSync(mockPkgPath, { force: true });
+      }
+    });
+
+    it('resolves and rewrites a user-provided library component', () => {
+      withTempDir((dir) => {
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          libraryComponents: {
+            'data-grid': { className: 'DataGrid' },
+          },
+        });
+        callBuildStart(plugin);
+        const file = path.join(dir, 'my-component.ts');
+        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
+        const result = callTransform(plugin, '<data-grid></data-grid>', file) as {
+          code: string;
+        };
+        expect(result.code).toContain('px-lib-data-grid-v1-0-0');
+        expect(result.code).toContain("import { DataGrid } from 'integration-component-library';");
+        expect(result.code).toContain("customElements.get('px-lib-data-grid-v1-0-0')");
+      });
+    });
+
+    it('uses user value and warns when overriding a built-in definition', () => {
+      withTempDir((dir) => {
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          libraryComponents: {
+            'object-to-table': { className: 'MyCustomObjectToTable' },
+          },
+        });
+        const warnFn = vi.fn();
+        callBuildStart(plugin, { warn: warnFn });
+
+        expect(warnFn).toHaveBeenCalledWith(
+          expect.stringContaining('overrides built-in definition'),
+        );
+
+        const file = path.join(dir, 'my-component.ts');
+        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
+        const result = callTransform(plugin, '<object-to-table></object-to-table>', file) as {
+          code: string;
+        };
+        expect(result.code).toContain(
+          "import { MyCustomObjectToTable } from 'integration-component-library';",
+        );
+      });
+    });
+
+    it('preserves built-in defs alongside user-provided defs', () => {
+      withTempDir((dir) => {
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          libraryComponents: {
+            'status-badge': { className: 'StatusBadge' },
+          },
+        });
+        callBuildStart(plugin);
+        const file = path.join(dir, 'my-component.ts');
+        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
+
+        const ottResult = callTransform(plugin, '<object-to-table></object-to-table>', file) as {
+          code: string;
+        };
+        expect(ottResult.code).toContain('px-lib-object-to-table-v1-0-0');
+
+        const badgeResult = callTransform(plugin, '<status-badge></status-badge>', file) as {
+          code: string;
+        };
+        expect(badgeResult.code).toContain('px-lib-status-badge-v1-0-0');
+      });
+    });
+
+    it('does not emit a false override warning for inherited property names', () => {
+      withTempDir((dir) => {
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          libraryComponents: {
+            // 'toString' is inherited from Object.prototype — using `in` instead
+            // of Object.hasOwn() would incorrectly flag this as overriding a
+            // built-in definition.
+            toString: { className: 'ToStringComponent' },
+          },
+        });
+        const warnFn = vi.fn();
+        callBuildStart(plugin, { warn: warnFn });
+
+        expect(warnFn).not.toHaveBeenCalledWith(
+          expect.stringContaining('overrides built-in definition'),
+        );
+      });
+    });
+
+    it('emits correct override warnings consistently across repeated buildStart calls', () => {
+      withTempDir((dir) => {
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          libraryComponents: {
+            'object-to-table': { className: 'MyCustomObjectToTable' },
+          },
+        });
+        const warnFn = vi.fn();
+        callBuildStart(plugin, { warn: warnFn });
+        callBuildStart(plugin, { warn: warnFn });
+
+        const overrideCalls = warnFn.mock.calls.filter((args: string[]) =>
+          args[0].includes('overrides built-in definition'),
+        );
+        expect(overrideCalls).toHaveLength(2);
+        for (const call of overrideCalls) {
+          expect(call[0]).toContain('className "ObjectToTable"');
+          expect(call[0]).toContain('"MyCustomObjectToTable"');
+        }
+      });
+    });
+  });
+
+  // ─── buildStart idempotency (watch mode) ──────────────────────────────────
+
+  describe('buildStart idempotency', () => {
+    it('does not rewrite a deleted component on the second build', () => {
+      withTempDir((dir) => {
+        writeFile(dir, 'key-value.ts', 'export class KeyValueComponent {}');
+        writeFile(dir, 'other.ts', 'export class OtherComponent {}');
+        const plugin = transformComponentNames({ componentsDir: dir });
+        callBuildStart(plugin);
+
+        // key-value should be rewritten after first build
+        const file = path.join(dir, 'other.ts');
+        const result1 = callTransform(
+          plugin,
+          'export class OtherComponent {}\n<key-value></key-value>',
+          file,
+        ) as { code: string };
+        expect(result1.code).toContain('px-int-');
+
+        // Delete key-value.ts and rebuild
+        fs.unlinkSync(path.join(dir, 'key-value.ts'));
+        callBuildStart(plugin);
+
+        // key-value should no longer be rewritten — the tag stays as-is
+        const result2 = callTransform(
+          plugin,
+          'export class OtherComponent {}\n<key-value></key-value>',
+          file,
+        ) as { code: string };
+        expect(result2.code).toContain('<key-value></key-value>');
+        expect(result2.code).not.toContain('-key-value-');
+      });
+    });
+
+    it('clears library entries when library is removed between builds', () => {
+      const mockLibDir = path.resolve(
+        process.cwd(),
+        'node_modules',
+        'integration-component-library',
+      );
+      const mockPkgPath = path.join(mockLibDir, 'package.json');
+      const hadMockLib = fs.existsSync(mockLibDir);
+      const hadPkgJson = fs.existsSync(mockPkgPath);
+      const originalPkgJson = hadPkgJson ? fs.readFileSync(mockPkgPath, 'utf-8') : undefined;
+
+      if (!hadMockLib) {
+        fs.mkdirSync(mockLibDir, { recursive: true });
+      }
+      fs.writeFileSync(
+        mockPkgPath,
+        JSON.stringify({ name: 'integration-component-library', version: '1.0.0' }),
+      );
+
+      try {
+        withTempDir((dir) => {
+          writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
+          const plugin = transformComponentNames({ componentsDir: dir });
+          const warnFn = vi.fn();
+          callBuildStart(plugin, { warn: warnFn });
+
+          // Library component should be rewritten after first build
+          const file = path.join(dir, 'my-component.ts');
+          const code = 'export class MyComponentComponent {}\n<object-to-table></object-to-table>';
+          const result1 = callTransform(plugin, code, file) as { code: string };
+          expect(result1.code).toContain('px-lib-object-to-table-v1-0-0');
+
+          // Remove only package.json to simulate library removal without
+          // destroying a real installed dependency's other files.
+          fs.rmSync(mockPkgPath, { force: true });
+          callBuildStart(plugin, { warn: warnFn });
+
+          // Library component should no longer be rewritten
+          const result2 = callTransform(plugin, code, file) as { code: string };
+          expect(result2.code).toContain('<object-to-table></object-to-table>');
+          expect(result2.code).not.toContain('px-lib-object-to-table');
+        });
+      } finally {
+        // Restore original state
+        if (!hadMockLib) {
+          fs.rmSync(mockLibDir, { recursive: true, force: true });
+        } else if (hadPkgJson && originalPkgJson !== undefined) {
+          fs.writeFileSync(mockPkgPath, originalPkgJson);
+        } else if (!hadPkgJson) {
+          fs.rmSync(mockPkgPath, { force: true });
+        }
+      }
+    });
+  });
 
   describe('componentsDir — filesystem scanning', () => {
     it('builds the component map from files on disk', () => {

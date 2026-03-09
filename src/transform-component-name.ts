@@ -6,7 +6,7 @@ import path from 'node:path';
 
 const require = createRequire(import.meta.url);
 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-const pkg: { version?: string } = require('../package.json');
+const pkg: { name?: string; version?: string } = require('../package.json');
 
 // ─── Virtual module ───────────────────────────────────────────────────────────
 
@@ -326,6 +326,30 @@ export interface PluginOptions {
    * @default true
    */
   rewriteLibraryComponents?: boolean;
+
+  /**
+   * Additional library component definitions to register alongside the
+   * built-in ones. Each key is the short tag name (kebab-case) and the value
+   * specifies the named export (`className`) from
+   * `integration-component-library`.
+   *
+   * These entries are merged with the plugin's built-in definitions. If a key
+   * conflicts with a built-in definition, the user-provided value takes
+   * precedence and a build warning is emitted.
+   *
+   * **Note:** This option is ignored when {@link rewriteLibraryComponents} is
+   * `false`.
+   *
+   * @example
+   * transformComponentNames({
+   *   componentsDir: resolve(__dirname, 'src/web-components'),
+   *   libraryComponents: {
+   *     'data-grid': { className: 'DataGrid' },
+   *     'status-badge': { className: 'StatusBadge' },
+   *   },
+   * })
+   */
+  libraryComponents?: Record<string, { className: string }>;
 }
 
 // ─── Plugin ───────────────────────────────────────────────────────────────────
@@ -346,6 +370,7 @@ export function transformComponentNames(options: PluginOptions): Plugin {
     autoImport = true,
     additionalEntry,
     rewriteLibraryComponents = true,
+    libraryComponents,
   } = options;
 
   // ── File-matching setup ──────────────────────────────────────────────────
@@ -369,8 +394,8 @@ export function transformComponentNames(options: PluginOptions): Plugin {
     { componentName: string; uniqueName: string; className: string }
   >();
 
-  // Library component definitions: short name → class export from integration-component-library
-  const libraryComponentDefs: Record<string, { className: string }> = {
+  // Built-in library component definitions (immutable baseline).
+  const builtinLibraryComponentDefs: Readonly<Record<string, { className: string }>> = {
     'object-to-table': { className: 'ObjectToTable' },
   };
 
@@ -384,6 +409,17 @@ export function transformComponentNames(options: PluginOptions): Plugin {
 
     // ── buildStart: scan filesystem, validate, build maps ──────────────────
     buildStart() {
+      const pluginName = pkg.name ?? 'vite-plugin-icl';
+      const pluginVersion = pkg.version ?? 'unknown';
+      this.info(`${pluginName} v${pluginVersion}`);
+
+      // Clear prior state so repeated builds (e.g. watch mode) are idempotent.
+      for (const key of Object.keys(componentMap)) {
+        delete componentMap[key];
+      }
+      fileComponentMap.clear();
+      resolvedLibraryMap.clear();
+
       const projectConfig = readProjectConfig();
       const basePrefix = `px-int-${hash}-${resolveAcronym(projectConfig)}`;
       const predefined = resolvePredefinedComponents(projectConfig);
@@ -429,6 +465,23 @@ export function transformComponentNames(options: PluginOptions): Plugin {
       // same deterministic formula the library uses, avoiding executing the
       // library code (which may reference browser APIs unavailable in Node).
       if (rewriteLibraryComponents) {
+        // Build a fresh merged defs object each buildStart to stay idempotent.
+        const mergedDefs: Record<string, { className: string }> = {
+          ...builtinLibraryComponentDefs,
+        };
+        if (libraryComponents) {
+          for (const [shortName, def] of Object.entries(libraryComponents)) {
+            if (Object.hasOwn(builtinLibraryComponentDefs, shortName)) {
+              this.warn(
+                `libraryComponents: user-provided definition for ` +
+                  `"${shortName}" overrides built-in definition ` +
+                  `(className "${builtinLibraryComponentDefs[shortName].className}" → "${def.className}").`,
+              );
+            }
+            mergedDefs[shortName] = def;
+          }
+        }
+
         try {
           // Walk up from the project root to find the library's package.json
           // in node_modules. We cannot use require.resolve because the library's
@@ -438,15 +491,15 @@ export function transformComponentNames(options: PluginOptions): Plugin {
           const libPkg: { version?: string } = JSON.parse(readFileSync(libPkgPath, 'utf-8'));
           const libVersion = libPkg.version ?? '0.0.0';
           const normalizedVersion = libVersion.replace(/\./g, '-');
-          for (const [shortName, { className }] of Object.entries(libraryComponentDefs)) {
+          for (const [shortName, { className }] of Object.entries(mergedDefs)) {
             const resolvedTagName = `px-lib-${shortName.toLowerCase()}-v${normalizedVersion}`;
             componentMap[shortName] = resolvedTagName;
             resolvedLibraryMap.set(shortName, { resolvedTagName, className });
           }
         } catch (e: unknown) {
           const msg = e instanceof Error ? e.message : String(e);
-          console.warn(
-            `[vite-plugin-icl] integration-component-library not found; ` +
+          this.warn(
+            `integration-component-library not found; ` +
               `library component rewrites (e.g. object-to-table) will be skipped.\n` +
               `  Reason: ${msg}`,
           );

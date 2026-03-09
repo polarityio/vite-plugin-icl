@@ -562,7 +562,7 @@ describe('transformComponentNames plugin', () => {
       });
     });
 
-    it('does not produce duplicate or incorrect warnings when buildStart runs twice', () => {
+    it('emits correct override warnings consistently across repeated buildStart calls', () => {
       withTempDir((dir) => {
         const plugin = transformComponentNames({
           componentsDir: dir,

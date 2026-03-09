@@ -586,6 +586,95 @@ describe('transformComponentNames plugin', () => {
     });
   });
 
+  // ─── buildStart idempotency (watch mode) ──────────────────────────────────
+
+  describe('buildStart idempotency', () => {
+    it('does not rewrite a deleted component on the second build', () => {
+      withTempDir((dir) => {
+        writeFile(dir, 'key-value.ts', 'export class KeyValueComponent {}');
+        writeFile(dir, 'other.ts', 'export class OtherComponent {}');
+        const plugin = transformComponentNames({ componentsDir: dir });
+        callBuildStart(plugin);
+
+        // key-value should be rewritten after first build
+        const file = path.join(dir, 'other.ts');
+        const result1 = callTransform(
+          plugin,
+          'export class OtherComponent {}\n<key-value></key-value>',
+          file,
+        ) as { code: string };
+        expect(result1.code).toContain('px-int-');
+
+        // Delete key-value.ts and rebuild
+        fs.unlinkSync(path.join(dir, 'key-value.ts'));
+        callBuildStart(plugin);
+
+        // key-value should no longer be rewritten — the tag stays as-is
+        const result2 = callTransform(
+          plugin,
+          'export class OtherComponent {}\n<key-value></key-value>',
+          file,
+        ) as { code: string };
+        expect(result2.code).toContain('<key-value></key-value>');
+        expect(result2.code).not.toContain('-key-value-');
+      });
+    });
+
+    it('clears library entries when library is removed between builds', () => {
+      const mockLibDir = path.resolve(
+        process.cwd(),
+        'node_modules',
+        'integration-component-library',
+      );
+      const mockPkgPath = path.join(mockLibDir, 'package.json');
+      const hadMockLib = fs.existsSync(mockLibDir);
+      const hadPkgJson = fs.existsSync(mockPkgPath);
+      const originalPkgJson = hadPkgJson ? fs.readFileSync(mockPkgPath, 'utf-8') : undefined;
+
+      if (!hadMockLib) {
+        fs.mkdirSync(mockLibDir, { recursive: true });
+      }
+      fs.writeFileSync(
+        mockPkgPath,
+        JSON.stringify({ name: 'integration-component-library', version: '1.0.0' }),
+      );
+
+      try {
+        withTempDir((dir) => {
+          writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
+          const plugin = transformComponentNames({ componentsDir: dir });
+          const warnFn = vi.fn();
+          callBuildStart(plugin, { warn: warnFn });
+
+          // Library component should be rewritten after first build
+          const file = path.join(dir, 'my-component.ts');
+          const code = 'export class MyComponentComponent {}\n<object-to-table></object-to-table>';
+          const result1 = callTransform(plugin, code, file) as { code: string };
+          expect(result1.code).toContain('px-lib-object-to-table-v1-0-0');
+
+          // Remove the library and rebuild
+          fs.rmSync(mockLibDir, { recursive: true, force: true });
+          callBuildStart(plugin, { warn: warnFn });
+
+          // Library component should no longer be rewritten
+          const result2 = callTransform(plugin, code, file) as { code: string };
+          expect(result2.code).toContain('<object-to-table></object-to-table>');
+          expect(result2.code).not.toContain('px-lib-object-to-table');
+        });
+      } finally {
+        // Restore original state
+        if (!hadMockLib) {
+          fs.rmSync(mockLibDir, { recursive: true, force: true });
+        } else if (hadPkgJson && originalPkgJson !== undefined) {
+          fs.mkdirSync(mockLibDir, { recursive: true });
+          fs.writeFileSync(mockPkgPath, originalPkgJson);
+        } else if (!hadPkgJson) {
+          fs.rmSync(mockPkgPath, { force: true });
+        }
+      }
+    });
+  });
+
   describe('componentsDir — filesystem scanning', () => {
     it('builds the component map from files on disk', () => {
       withTempDir((dir) => {

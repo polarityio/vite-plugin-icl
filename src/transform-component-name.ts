@@ -406,6 +406,13 @@ export function transformComponentNames(options: PluginOptions): Plugin {
 
     // ── buildStart: scan filesystem, validate, build maps ──────────────────
     buildStart() {
+      // Clear prior state so repeated builds (e.g. watch mode) are idempotent.
+      for (const key of Object.keys(componentMap)) {
+        delete componentMap[key];
+      }
+      fileComponentMap.clear();
+      resolvedLibraryMap.clear();
+
       const projectConfig = readProjectConfig();
       const basePrefix = `px-int-${hash}-${resolveAcronym(projectConfig)}`;
       const predefined = resolvePredefinedComponents(projectConfig);

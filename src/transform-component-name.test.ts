@@ -550,7 +550,10 @@ describe('transformComponentNames plugin', () => {
         const plugin = transformComponentNames({
           componentsDir: dir,
           libraryComponents: {
-            'to-string': { className: 'ToString' },
+            // 'toString' is inherited from Object.prototype — using `in` instead
+            // of Object.hasOwn() would incorrectly flag this as overriding a
+            // built-in definition.
+            toString: { className: 'ToStringComponent' },
           },
         });
         const warnFn = vi.fn();

@@ -544,6 +544,46 @@ describe('transformComponentNames plugin', () => {
         expect(badgeResult.code).toContain('px-lib-status-badge-v1-0-0');
       });
     });
+
+    it('does not emit a false override warning for inherited property names', () => {
+      withTempDir((dir) => {
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          libraryComponents: {
+            'to-string': { className: 'ToString' },
+          },
+        });
+        const warnFn = vi.fn();
+        callBuildStart(plugin, { warn: warnFn });
+
+        expect(warnFn).not.toHaveBeenCalledWith(
+          expect.stringContaining('overrides built-in definition'),
+        );
+      });
+    });
+
+    it('does not produce duplicate or incorrect warnings when buildStart runs twice', () => {
+      withTempDir((dir) => {
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          libraryComponents: {
+            'object-to-table': { className: 'MyCustomObjectToTable' },
+          },
+        });
+        const warnFn = vi.fn();
+        callBuildStart(plugin, { warn: warnFn });
+        callBuildStart(plugin, { warn: warnFn });
+
+        const overrideCalls = warnFn.mock.calls.filter((args: string[]) =>
+          args[0].includes('overrides built-in definition'),
+        );
+        expect(overrideCalls).toHaveLength(2);
+        for (const call of overrideCalls) {
+          expect(call[0]).toContain('className "ObjectToTable"');
+          expect(call[0]).toContain('"MyCustomObjectToTable"');
+        }
+      });
+    });
   });
 
   describe('componentsDir — filesystem scanning', () => {

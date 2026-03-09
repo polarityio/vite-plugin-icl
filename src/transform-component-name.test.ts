@@ -652,8 +652,9 @@ describe('transformComponentNames plugin', () => {
           const result1 = callTransform(plugin, code, file) as { code: string };
           expect(result1.code).toContain('px-lib-object-to-table-v1-0-0');
 
-          // Remove the library and rebuild
-          fs.rmSync(mockLibDir, { recursive: true, force: true });
+          // Remove only package.json to simulate library removal without
+          // destroying a real installed dependency's other files.
+          fs.rmSync(mockPkgPath, { force: true });
           callBuildStart(plugin, { warn: warnFn });
 
           // Library component should no longer be rewritten
@@ -666,7 +667,6 @@ describe('transformComponentNames plugin', () => {
         if (!hadMockLib) {
           fs.rmSync(mockLibDir, { recursive: true, force: true });
         } else if (hadPkgJson && originalPkgJson !== undefined) {
-          fs.mkdirSync(mockLibDir, { recursive: true });
           fs.writeFileSync(mockPkgPath, originalPkgJson);
         } else if (!hadPkgJson) {
           fs.rmSync(mockPkgPath, { force: true });

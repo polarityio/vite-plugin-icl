@@ -295,6 +295,8 @@ These entries are merged with the plugin's built-in definitions (e.g. `object-to
 
 If a key in `libraryComponents` conflicts with a built-in definition, the user-provided value takes precedence and the plugin emits a build warning.
 
+> **Note:** `libraryComponents` is ignored when `rewriteLibraryComponents` is set to `false`.
+
 ---
 
 ## Plugin Options
@@ -360,6 +362,8 @@ See [Library Component Aliases](#library-component-aliases) for details.
 Additional library component definitions to register alongside the built-in ones. Each key is the short tag name (kebab-case) and the value specifies the named export from `integration-component-library`.
 
 User-provided entries are merged with the built-in definitions. If a key conflicts with a built-in definition, the user-provided value takes precedence and a build warning is emitted.
+
+This option is ignored when `rewriteLibraryComponents` is set to `false`.
 
 See [Custom Library Components](#custom-library-components) for a full example.
 

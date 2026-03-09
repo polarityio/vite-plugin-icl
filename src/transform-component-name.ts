@@ -337,6 +337,9 @@ export interface PluginOptions {
    * conflicts with a built-in definition, the user-provided value takes
    * precedence and a build warning is emitted.
    *
+   * **Note:** This option is ignored when {@link rewriteLibraryComponents} is
+   * `false`.
+   *
    * @example
    * transformComponentNames({
    *   componentsDir: resolve(__dirname, 'src/web-components'),

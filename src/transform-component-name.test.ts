@@ -323,13 +323,15 @@ describe('transformComponentNames plugin', () => {
     const mockLibDir = path.resolve(process.cwd(), 'node_modules', 'integration-component-library');
     const mockPkgPath = path.join(mockLibDir, 'package.json');
     let hadMockLib: boolean;
+    let hadPkgJson: boolean;
     let originalPkgJson: string | undefined;
 
     beforeEach(() => {
       hadMockLib = fs.existsSync(mockLibDir);
+      hadPkgJson = fs.existsSync(mockPkgPath);
       if (!hadMockLib) {
         fs.mkdirSync(mockLibDir, { recursive: true });
-      } else if (fs.existsSync(mockPkgPath)) {
+      } else if (hadPkgJson) {
         originalPkgJson = fs.readFileSync(mockPkgPath, 'utf-8');
       }
       fs.writeFileSync(
@@ -341,9 +343,11 @@ describe('transformComponentNames plugin', () => {
     afterEach(() => {
       if (!hadMockLib) {
         fs.rmSync(mockLibDir, { recursive: true, force: true });
-      } else if (originalPkgJson !== undefined) {
+      } else if (hadPkgJson && originalPkgJson !== undefined) {
         fs.writeFileSync(mockPkgPath, originalPkgJson);
         originalPkgJson = undefined;
+      } else if (!hadPkgJson) {
+        fs.rmSync(mockPkgPath, { force: true });
       }
     });
 
@@ -443,13 +447,15 @@ describe('transformComponentNames plugin', () => {
     const mockLibDir = path.resolve(process.cwd(), 'node_modules', 'integration-component-library');
     const mockPkgPath = path.join(mockLibDir, 'package.json');
     let hadMockLib: boolean;
+    let hadPkgJson: boolean;
     let originalPkgJson: string | undefined;
 
     beforeEach(() => {
       hadMockLib = fs.existsSync(mockLibDir);
+      hadPkgJson = fs.existsSync(mockPkgPath);
       if (!hadMockLib) {
         fs.mkdirSync(mockLibDir, { recursive: true });
-      } else if (fs.existsSync(mockPkgPath)) {
+      } else if (hadPkgJson) {
         originalPkgJson = fs.readFileSync(mockPkgPath, 'utf-8');
       }
       fs.writeFileSync(
@@ -461,9 +467,11 @@ describe('transformComponentNames plugin', () => {
     afterEach(() => {
       if (!hadMockLib) {
         fs.rmSync(mockLibDir, { recursive: true, force: true });
-      } else if (originalPkgJson !== undefined) {
+      } else if (hadPkgJson && originalPkgJson !== undefined) {
         fs.writeFileSync(mockPkgPath, originalPkgJson);
         originalPkgJson = undefined;
+      } else if (!hadPkgJson) {
+        fs.rmSync(mockPkgPath, { force: true });
       }
     });
 

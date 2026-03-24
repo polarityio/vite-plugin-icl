@@ -315,9 +315,9 @@ export interface PluginOptions {
 
   /**
    * When `true` (the default), the plugin rewrites tags from
-   * `integration-component-library` (e.g. `<object-to-table>`) into their
-   * resolved versioned names at build time, and injects the corresponding
-   * `import` and `customElements.define(...)` calls automatically.
+   * `integration-component-library` into their resolved versioned names at
+   * build time, and injects the corresponding `import` and
+   * `customElements.define(...)` calls automatically.
    *
    * Set to `false` if you prefer to handle library components yourself — for
    * example by using `staticHtml` / `unsafeStatic` with the exported name
@@ -328,14 +328,12 @@ export interface PluginOptions {
   rewriteLibraryComponents?: boolean;
 
   /**
-   * Additional library component definitions to register alongside the
-   * built-in ones. Each key is the short tag name (kebab-case) and the value
-   * specifies the named export (`className`) from
+   * Library component definitions to register. Each key is the short tag name
+   * (kebab-case) and the value specifies the named export (`className`) from
    * `integration-component-library`.
    *
-   * These entries are merged with the plugin's built-in definitions. If a key
-   * conflicts with a built-in definition, the user-provided value takes
-   * precedence and a build warning is emitted.
+   * If a key conflicts with a built-in definition, the user-provided value
+   * takes precedence and a build warning is emitted.
    *
    * **Note:** This option is ignored when {@link rewriteLibraryComponents} is
    * `false`.
@@ -395,9 +393,7 @@ export function transformComponentNames(options: PluginOptions): Plugin {
   >();
 
   // Built-in library component definitions (immutable baseline).
-  const builtinLibraryComponentDefs: Readonly<Record<string, { className: string }>> = {
-    'object-to-table': { className: 'ObjectToTable' },
-  };
+  const builtinLibraryComponentDefs: Readonly<Record<string, { className: string }>> = {};
 
   // Resolved at build time: short name → { resolvedTagName, className }
   const resolvedLibraryMap = new Map<string, { resolvedTagName: string; className: string }>();
@@ -500,7 +496,7 @@ export function transformComponentNames(options: PluginOptions): Plugin {
           const msg = e instanceof Error ? e.message : String(e);
           this.warn(
             `integration-component-library not found; ` +
-              `library component rewrites (e.g. object-to-table) will be skipped.\n` +
+              `library component rewrites will be skipped.\n` +
               `  Reason: ${msg}`,
           );
         }

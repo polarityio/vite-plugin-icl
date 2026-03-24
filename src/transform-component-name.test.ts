@@ -308,11 +308,16 @@ describe('transformComponentNames plugin', () => {
 
   it('skips library component handling when the library is not available', () => {
     withTempDir((dir) => {
-      const plugin = transformComponentNames({ componentsDir: dir });
+      const plugin = transformComponentNames({
+        componentsDir: dir,
+        libraryComponents: {
+          'data-grid': { className: 'DataGrid' },
+        },
+      });
       callBuildStart(plugin);
       const file = path.join(dir, 'other.ts');
       writeFile(dir, 'other.ts', 'const x = 1;');
-      const result = callTransform(plugin, '<object-to-table></object-to-table>', file);
+      const result = callTransform(plugin, '<data-grid></data-grid>', file);
       expect(result).toBeNull();
     });
   });
@@ -322,135 +327,15 @@ describe('transformComponentNames plugin', () => {
       const plugin = transformComponentNames({
         componentsDir: dir,
         rewriteLibraryComponents: false,
+        libraryComponents: {
+          'data-grid': { className: 'DataGrid' },
+        },
       });
       callBuildStart(plugin);
       const file = path.join(dir, 'my-component.ts');
       writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
-      const result = callTransform(plugin, '<object-to-table .data=${x}></object-to-table>', file);
+      const result = callTransform(plugin, '<data-grid .data=${x}></data-grid>', file);
       expect(result).toBeNull();
-    });
-  });
-
-  describe('library component transforms (object-to-table)', () => {
-    const MOCK_LIB_VERSION = '1.0.0';
-    const MOCK_OTT_NAME = 'px-lib-object-to-table-v1-0-0';
-    const mockLibDir = path.resolve(process.cwd(), 'node_modules', 'integration-component-library');
-    const mockPkgPath = path.join(mockLibDir, 'package.json');
-    let hadMockLib: boolean;
-    let hadPkgJson: boolean;
-    let originalPkgJson: string | undefined;
-
-    beforeEach(() => {
-      hadMockLib = fs.existsSync(mockLibDir);
-      hadPkgJson = fs.existsSync(mockPkgPath);
-      if (!hadMockLib) {
-        fs.mkdirSync(mockLibDir, { recursive: true });
-      } else if (hadPkgJson) {
-        originalPkgJson = fs.readFileSync(mockPkgPath, 'utf-8');
-      }
-      fs.writeFileSync(
-        mockPkgPath,
-        JSON.stringify({ name: 'integration-component-library', version: MOCK_LIB_VERSION }),
-      );
-    });
-
-    afterEach(() => {
-      if (!hadMockLib) {
-        fs.rmSync(mockLibDir, { recursive: true, force: true });
-      } else if (hadPkgJson && originalPkgJson !== undefined) {
-        fs.writeFileSync(mockPkgPath, originalPkgJson);
-        originalPkgJson = undefined;
-      } else if (!hadPkgJson) {
-        fs.rmSync(mockPkgPath, { force: true });
-      }
-    });
-
-    it('rewrites an opening tag to the resolved concrete name', () => {
-      withTempDir((dir) => {
-        const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
-        const file = path.join(dir, 'my-component.ts');
-        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
-        const result = callTransform(plugin, `<object-to-table .data=\${x}>`, file) as {
-          code: string;
-        };
-        expect(result.code).toContain(`<${MOCK_OTT_NAME} .data=\${x}>`);
-      });
-    });
-
-    it('rewrites a closing tag to the resolved concrete name', () => {
-      withTempDir((dir) => {
-        const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
-        const file = path.join(dir, 'my-component.ts');
-        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
-        const result = callTransform(plugin, '</object-to-table>', file) as { code: string };
-        expect(result.code).toContain(`</${MOCK_OTT_NAME}>`);
-      });
-    });
-
-    it('rewrites both opening and closing tags', () => {
-      withTempDir((dir) => {
-        const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
-        const file = path.join(dir, 'my-component.ts');
-        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
-        const result = callTransform(
-          plugin,
-          '<object-to-table .data=${x}></object-to-table>',
-          file,
-        ) as { code: string };
-        expect(result.code).toContain(`<${MOCK_OTT_NAME} .data=\${x}>`);
-        expect(result.code).toContain(`</${MOCK_OTT_NAME}>`);
-      });
-    });
-
-    it('injects the library import statement', () => {
-      withTempDir((dir) => {
-        const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
-        const file = path.join(dir, 'my-component.ts');
-        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
-        const result = callTransform(plugin, '<object-to-table></object-to-table>', file) as {
-          code: string;
-        };
-        expect(result.code).toContain(
-          "import { ObjectToTable } from 'integration-component-library';",
-        );
-      });
-    });
-
-    it('injects the registration block for the library component', () => {
-      withTempDir((dir) => {
-        const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
-        const file = path.join(dir, 'my-component.ts');
-        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
-        const result = callTransform(plugin, '<object-to-table></object-to-table>', file) as {
-          code: string;
-        };
-        expect(result.code).toContain(`customElements.get('${MOCK_OTT_NAME}')`);
-        expect(result.code).toContain(
-          `customElements.define('${MOCK_OTT_NAME}', ObjectToTable as unknown as CustomElementConstructor)`,
-        );
-      });
-    });
-    it('does not rewrite library tags when rewriteLibraryComponents is false even if library is installed', () => {
-      withTempDir((dir) => {
-        const plugin = transformComponentNames({
-          componentsDir: dir,
-          rewriteLibraryComponents: false,
-        });
-        callBuildStart(plugin);
-        const file = path.join(dir, 'my-component.ts');
-        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
-        const result = callTransform(
-          plugin,
-          '<object-to-table .data=${x}></object-to-table>',
-          file,
-        );
-        expect(result).toBeNull();
-      });
     });
   });
 
@@ -509,53 +394,28 @@ describe('transformComponentNames plugin', () => {
       });
     });
 
-    it('uses user value and warns when overriding a built-in definition', () => {
-      withTempDir((dir) => {
-        const plugin = transformComponentNames({
-          componentsDir: dir,
-          libraryComponents: {
-            'object-to-table': { className: 'MyCustomObjectToTable' },
-          },
-        });
-        const warnFn = vi.fn();
-        callBuildStart(plugin, { warn: warnFn });
-
-        expect(warnFn).toHaveBeenCalledWith(
-          expect.stringContaining('overrides built-in definition'),
-        );
-
-        const file = path.join(dir, 'my-component.ts');
-        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
-        const result = callTransform(plugin, '<object-to-table></object-to-table>', file) as {
-          code: string;
-        };
-        expect(result.code).toContain(
-          "import { MyCustomObjectToTable } from 'integration-component-library';",
-        );
-      });
-    });
-
-    it('preserves built-in defs alongside user-provided defs', () => {
+    it('resolves and rewrites multiple user-provided library components', () => {
       withTempDir((dir) => {
         const plugin = transformComponentNames({
           componentsDir: dir,
           libraryComponents: {
             'status-badge': { className: 'StatusBadge' },
+            'data-grid': { className: 'DataGrid' },
           },
         });
         callBuildStart(plugin);
         const file = path.join(dir, 'my-component.ts');
         writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
 
-        const ottResult = callTransform(plugin, '<object-to-table></object-to-table>', file) as {
-          code: string;
-        };
-        expect(ottResult.code).toContain('px-lib-object-to-table-v1-0-0');
-
         const badgeResult = callTransform(plugin, '<status-badge></status-badge>', file) as {
           code: string;
         };
         expect(badgeResult.code).toContain('px-lib-status-badge-v1-0-0');
+
+        const gridResult = callTransform(plugin, '<data-grid></data-grid>', file) as {
+          code: string;
+        };
+        expect(gridResult.code).toContain('px-lib-data-grid-v1-0-0');
       });
     });
 
@@ -576,29 +436,6 @@ describe('transformComponentNames plugin', () => {
         expect(warnFn).not.toHaveBeenCalledWith(
           expect.stringContaining('overrides built-in definition'),
         );
-      });
-    });
-
-    it('emits correct override warnings consistently across repeated buildStart calls', () => {
-      withTempDir((dir) => {
-        const plugin = transformComponentNames({
-          componentsDir: dir,
-          libraryComponents: {
-            'object-to-table': { className: 'MyCustomObjectToTable' },
-          },
-        });
-        const warnFn = vi.fn();
-        callBuildStart(plugin, { warn: warnFn });
-        callBuildStart(plugin, { warn: warnFn });
-
-        const overrideCalls = warnFn.mock.calls.filter((args: string[]) =>
-          args[0].includes('overrides built-in definition'),
-        );
-        expect(overrideCalls).toHaveLength(2);
-        for (const call of overrideCalls) {
-          expect(call[0]).toContain('className "ObjectToTable"');
-          expect(call[0]).toContain('"MyCustomObjectToTable"');
-        }
       });
     });
   });
@@ -659,15 +496,20 @@ describe('transformComponentNames plugin', () => {
       try {
         withTempDir((dir) => {
           writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
-          const plugin = transformComponentNames({ componentsDir: dir });
+          const plugin = transformComponentNames({
+            componentsDir: dir,
+            libraryComponents: {
+              'data-grid': { className: 'DataGrid' },
+            },
+          });
           const warnFn = vi.fn();
           callBuildStart(plugin, { warn: warnFn });
 
           // Library component should be rewritten after first build
           const file = path.join(dir, 'my-component.ts');
-          const code = 'export class MyComponentComponent {}\n<object-to-table></object-to-table>';
+          const code = 'export class MyComponentComponent {}\n<data-grid></data-grid>';
           const result1 = callTransform(plugin, code, file) as { code: string };
-          expect(result1.code).toContain('px-lib-object-to-table-v1-0-0');
+          expect(result1.code).toContain('px-lib-data-grid-v1-0-0');
 
           // Remove only package.json to simulate library removal without
           // destroying a real installed dependency's other files.
@@ -676,8 +518,8 @@ describe('transformComponentNames plugin', () => {
 
           // Library component should no longer be rewritten
           const result2 = callTransform(plugin, code, file) as { code: string };
-          expect(result2.code).toContain('<object-to-table></object-to-table>');
-          expect(result2.code).not.toContain('px-lib-object-to-table');
+          expect(result2.code).toContain('<data-grid></data-grid>');
+          expect(result2.code).not.toContain('px-lib-data-grid');
         });
       } finally {
         // Restore original state

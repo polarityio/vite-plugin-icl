@@ -31,6 +31,7 @@ They are transformed into collision-proof names during the build:
 - [System Components](#system-components)
 - [Library Component Aliases](#library-component-aliases)
 - [Custom Library Components](#custom-library-components)
+- [Component Registries](#component-registries)
 - [Plugin Options](#plugin-options)
 - [Contributing](#contributing)
 
@@ -306,6 +307,87 @@ These entries are used by the plugin to rewrite tags, inject imports, and regist
 
 ---
 
+## Component Registries
+
+Component registries provide a **generic, convention-free** way for any component library to declare its tag-name mappings. The plugin reads a JSON file exported by the library and automatically handles tag rewriting, imports, and `customElements.define(...)` injection — without hard-coding any naming conventions.
+
+### Using a Registry
+
+Point the `componentRegistries` option at one or more registry JSON files. Module specifiers are resolved via `require.resolve()` (found in `node_modules` automatically):
+
+```ts
+// vite.config.ts
+transformComponentNames({
+  componentsDir: resolve(__dirname, 'src/web-components'),
+  componentRegistries: [
+    'integration-component-library/component-registry.json',
+  ],
+})
+```
+
+Multiple registries are supported — for example, if you consume components from several libraries:
+
+```ts
+componentRegistries: [
+  'integration-component-library/component-registry.json',
+  '@acme/ui-library/component-registry.json',
+],
+```
+
+With a registry loaded, you can use simple tag names in your templates:
+
+| Write this | Transforms to |
+|---|---|
+| `<pi-button>` | `<pi-button-v1-0-0>` |
+| `<pi-key-value>` | `<pi-key-value-v1-0-0>` |
+
+The plugin also injects the corresponding `import` and `customElements.define(...)` calls so the components are bundled and registered automatically.
+
+### Publishing a Registry
+
+To make your component library compatible with `componentRegistries`, generate and export a JSON file in this format:
+
+```json
+{
+  "pi-button": {
+    "element": "pi-button-v1-0-0",
+    "className": "PiButton",
+    "package": "@polarity/button"
+  },
+  "pi-checkbox": {
+    "element": "pi-checkbox-v1-0-0",
+    "className": "PiCheckbox",
+    "package": "@polarity/checkbox"
+  }
+}
+```
+
+**Fields:**
+
+| Field | Type | Description |
+|---|---|---|
+| *key* | `string` | The short tag name developers write in templates (e.g. `pi-button`) |
+| `element` | `string` | The globally unique element name to register (e.g. `pi-button-v1-0-0`) |
+| `className` | `string` | The named class export from the package (e.g. `PiButton`) |
+| `package` | `string` | The npm package to import the class from (e.g. `@polarity/button`) |
+
+**Steps to publish:**
+
+1. **Generate the registry at build time** — write a script that scans your component packages, reads each `package.json` version, and outputs the JSON mapping. This avoids manual maintenance.
+
+2. **Export the file in `package.json`** — add an exports entry so the plugin can resolve it:
+   ```json
+   {
+     "exports": {
+       "./component-registry.json": "./dist/component-registry.json"
+     }
+   }
+   ```
+
+3. **Include it in the published package** — ensure `dist/component-registry.json` is in your `files` array or not excluded by `.npmignore`.
+
+---
+
 ## Plugin Options
 
 ### `componentsDir` *(required)*
@@ -373,6 +455,22 @@ User-provided entries are resolved at build time. If a key conflicts with a buil
 This option is ignored when `rewriteLibraryComponents` is set to `false`.
 
 See [Custom Library Components](#custom-library-components) for a full example.
+
+---
+
+### `componentRegistries`
+
+| Type | Default |
+|---|---|
+| `string[]` | — |
+
+An array of component registry module specifiers or absolute file paths. Each entry points to a JSON file that maps short tag names to their versioned element names, class names, and source packages.
+
+Module specifiers are resolved via `require.resolve()` (found in `node_modules` automatically). Absolute paths are used as-is.
+
+This option is ignored when `rewriteLibraryComponents` is set to `false`.
+
+See [Component Registries](#component-registries) for format details and a full example.
 
 ---
 

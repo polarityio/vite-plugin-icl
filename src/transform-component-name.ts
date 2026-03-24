@@ -348,6 +348,42 @@ export interface PluginOptions {
    * })
    */
   libraryComponents?: Record<string, { className: string }>;
+
+  /**
+   * An array of component registry module specifiers or absolute file paths.
+   * Each entry points to a JSON file that maps short tag names to their
+   * versioned element names, class names, and source packages.
+   *
+   * Module specifiers are resolved via `require.resolve()` (e.g. they are
+   * found in `node_modules` automatically). Absolute paths are used as-is.
+   *
+   * **Registry JSON format:**
+   * ```json
+   * {
+   *   "pi-button": {
+   *     "element": "pi-button-v1-0-0",
+   *     "className": "PiButton",
+   *     "package": "@polarity/button"
+   *   }
+   * }
+   * ```
+   *
+   * When a registry is loaded, the plugin rewrites any matching tag names
+   * found in your component templates and injects the corresponding `import`
+   * and `customElements.define(...)` calls automatically.
+   *
+   * **Note:** This option is ignored when {@link rewriteLibraryComponents} is
+   * `false`.
+   *
+   * @example
+   * transformComponentNames({
+   *   componentsDir: resolve(__dirname, 'src/web-components'),
+   *   componentRegistries: [
+   *     'integration-component-library/component-registry.json',
+   *   ],
+   * })
+   */
+  componentRegistries?: string[];
 }
 
 // ─── Plugin ───────────────────────────────────────────────────────────────────
@@ -369,6 +405,7 @@ export function transformComponentNames(options: PluginOptions): Plugin {
     additionalEntry,
     rewriteLibraryComponents = true,
     libraryComponents,
+    componentRegistries,
   } = options;
 
   // ── File-matching setup ──────────────────────────────────────────────────
@@ -395,8 +432,11 @@ export function transformComponentNames(options: PluginOptions): Plugin {
   // Built-in library component definitions (immutable baseline).
   const builtinLibraryComponentDefs: Readonly<Record<string, { className: string }>> = {};
 
-  // Resolved at build time: short name → { resolvedTagName, className }
-  const resolvedLibraryMap = new Map<string, { resolvedTagName: string; className: string }>();
+  // Resolved at build time: short name → { resolvedTagName, className, packageName }
+  const resolvedLibraryMap = new Map<
+    string,
+    { resolvedTagName: string; className: string; packageName: string }
+  >();
 
   return {
     name: 'transform-component-names',
@@ -461,7 +501,71 @@ export function transformComponentNames(options: PluginOptions): Plugin {
       // same deterministic formula the library uses, avoiding executing the
       // library code (which may reference browser APIs unavailable in Node).
       if (rewriteLibraryComponents) {
-        // Build a fresh merged defs object each buildStart to stay idempotent.
+        // ── Load component registries ──
+        if (componentRegistries && componentRegistries.length > 0) {
+          for (const registrySpec of componentRegistries) {
+            let registryPath: string;
+            try {
+              // Treat as a module specifier first (resolves from node_modules).
+              // Fall back to absolute path if require.resolve fails.
+              registryPath = path.isAbsolute(registrySpec)
+                ? registrySpec
+                : require.resolve(registrySpec);
+            } catch {
+              this.warn(
+                `componentRegistries: could not resolve "${registrySpec}".\n` +
+                  `  Ensure the package is installed or provide an absolute path.`,
+              );
+              continue;
+            }
+
+            if (!existsSync(registryPath)) {
+              this.warn(
+                `componentRegistries: file not found at "${registryPath}".\n` +
+                  `  Skipping this registry.`,
+              );
+              continue;
+            }
+
+            try {
+              const registryContent = readFileSync(registryPath, 'utf-8');
+              const registry = JSON.parse(registryContent) as Record<
+                string,
+                { element?: string; className?: string; package?: string }
+              >;
+
+              let count = 0;
+              for (const [shortName, entry] of Object.entries(registry)) {
+                if (
+                  typeof entry.element !== 'string' ||
+                  typeof entry.className !== 'string' ||
+                  typeof entry.package !== 'string'
+                ) {
+                  this.warn(
+                    `componentRegistries: skipping invalid entry "${shortName}" ` +
+                      `in ${registryPath} (missing element, className, or package).`,
+                  );
+                  continue;
+                }
+                componentMap[shortName] = entry.element;
+                resolvedLibraryMap.set(shortName, {
+                  resolvedTagName: entry.element,
+                  className: entry.className,
+                  packageName: entry.package,
+                });
+                count++;
+              }
+              this.info(`Loaded ${count} components from registry: ${registrySpec}`);
+            } catch (e: unknown) {
+              const msg = e instanceof Error ? e.message : String(e);
+              this.warn(
+                `componentRegistries: failed to parse "${registryPath}".\n` + `  Reason: ${msg}`,
+              );
+            }
+          }
+        }
+
+        // ── Merge built-in and user-provided library component definitions ──
         const mergedDefs: Record<string, { className: string }> = {
           ...builtinLibraryComponentDefs,
         };
@@ -478,27 +582,31 @@ export function transformComponentNames(options: PluginOptions): Plugin {
           }
         }
 
-        try {
-          // Walk up from the project root to find the library's package.json
-          // in node_modules. We cannot use require.resolve because the library's
-          // "exports" field may not expose package.json or may be ESM-only.
-          const libPkgPath = resolveLibraryPackageJson(process.cwd());
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-          const libPkg: { version?: string } = JSON.parse(readFileSync(libPkgPath, 'utf-8'));
-          const libVersion = libPkg.version ?? '0.0.0';
-          const normalizedVersion = libVersion.replace(/\./g, '-');
-          for (const [shortName, { className }] of Object.entries(mergedDefs)) {
-            const resolvedTagName = `px-lib-${shortName.toLowerCase()}-v${normalizedVersion}`;
-            componentMap[shortName] = resolvedTagName;
-            resolvedLibraryMap.set(shortName, { resolvedTagName, className });
+        // Only resolve from package.json if there are defs to process
+        if (Object.keys(mergedDefs).length > 0) {
+          try {
+            const libPkgPath = resolveLibraryPackageJson(process.cwd());
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            const libPkg: { version?: string } = JSON.parse(readFileSync(libPkgPath, 'utf-8'));
+            const libVersion = libPkg.version ?? '0.0.0';
+            const normalizedVersion = libVersion.replace(/\./g, '-');
+            for (const [shortName, { className }] of Object.entries(mergedDefs)) {
+              const resolvedTagName = `px-lib-${shortName.toLowerCase()}-v${normalizedVersion}`;
+              componentMap[shortName] = resolvedTagName;
+              resolvedLibraryMap.set(shortName, {
+                resolvedTagName,
+                className,
+                packageName: 'integration-component-library',
+              });
+            }
+          } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : String(e);
+            this.warn(
+              `integration-component-library not found; ` +
+                `library component rewrites will be skipped.\n` +
+                `  Reason: ${msg}`,
+            );
           }
-        } catch (e: unknown) {
-          const msg = e instanceof Error ? e.message : String(e);
-          this.warn(
-            `integration-component-library not found; ` +
-              `library component rewrites will be skipped.\n` +
-              `  Reason: ${msg}`,
-          );
         }
       }
     },
@@ -565,9 +673,9 @@ export function transformComponentNames(options: PluginOptions): Plugin {
       }
 
       // ── 3. Library component import + registration injection ──────────────
-      for (const [, { resolvedTagName, className }] of resolvedLibraryMap) {
+      for (const [, { resolvedTagName, className, packageName }] of resolvedLibraryMap) {
         if (transformedCode.includes(resolvedTagName)) {
-          const importStatement = `import { ${className} } from 'integration-component-library';`;
+          const importStatement = `import { ${className} } from '${packageName}';`;
           if (!transformedCode.includes(importStatement)) {
             transformedCode = `${importStatement}\n${transformedCode}`;
             hasChanges = true;

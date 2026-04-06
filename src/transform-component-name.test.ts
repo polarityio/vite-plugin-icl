@@ -267,7 +267,7 @@ describe('transformComponentNames plugin', () => {
 
       expect(infoFn).toHaveBeenCalledOnce();
       expect(infoFn).toHaveBeenCalledWith(
-        expect.stringMatching(/^vite-plugin-icl v\d+\.\d+\.\d+$/),
+        expect.stringMatching(/^@polarityio\/vite-plugin-icl v\d+\.\d+\.\d+$/),
       );
     });
   });

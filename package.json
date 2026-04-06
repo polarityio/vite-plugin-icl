@@ -21,7 +21,8 @@
   },
   "scripts": {
     "build": "tsup",
-    "prepare": "tsup && husky",
+    "prepare": "husky",
+    "prepublishOnly": "tsup",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src",

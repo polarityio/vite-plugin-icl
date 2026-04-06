@@ -440,6 +440,88 @@ describe('transformComponentNames plugin', () => {
     });
   });
 
+  // ─── componentRegistries validation ─────────────────────────────────────────
+
+  describe('componentRegistries validation', () => {
+    it('warns and skips a registry entry whose key is not a valid custom element name', () => {
+      withTempDir((dir) => {
+        const registryPath = writeFile(
+          dir,
+          'registry.json',
+          JSON.stringify({
+            nohyphen: {
+              element: 'some-element',
+              className: 'NoHyphen',
+              package: 'some-pkg',
+            },
+          }),
+        );
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryPath],
+        });
+        const warnFn = vi.fn();
+        callBuildStart(plugin, { warn: warnFn });
+
+        expect(warnFn).toHaveBeenCalledWith(
+          expect.stringContaining('"nohyphen" is not a valid custom element name'),
+        );
+      });
+    });
+
+    it('warns and skips a registry entry whose element value is not a valid custom element name', () => {
+      withTempDir((dir) => {
+        const registryPath = writeFile(
+          dir,
+          'registry.json',
+          JSON.stringify({
+            'my-tag': {
+              element: 'BadElement',
+              className: 'MyTag',
+              package: 'some-pkg',
+            },
+          }),
+        );
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryPath],
+        });
+        const warnFn = vi.fn();
+        callBuildStart(plugin, { warn: warnFn });
+
+        expect(warnFn).toHaveBeenCalledWith(
+          expect.stringContaining(
+            'element "BadElement" for "my-tag" is not a valid custom element name',
+          ),
+        );
+      });
+    });
+
+    it('does not warn for valid registry entries', () => {
+      withTempDir((dir) => {
+        const registryPath = writeFile(
+          dir,
+          'registry.json',
+          JSON.stringify({
+            'data-grid': {
+              element: 'px-lib-data-grid-v1',
+              className: 'DataGrid',
+              package: 'some-pkg',
+            },
+          }),
+        );
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryPath],
+        });
+        const warnFn = vi.fn();
+        callBuildStart(plugin, { warn: warnFn });
+
+        expect(warnFn).not.toHaveBeenCalled();
+      });
+    });
+  });
+
   // ─── buildStart idempotency (watch mode) ──────────────────────────────────
 
   describe('buildStart idempotency', () => {

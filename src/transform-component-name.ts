@@ -547,6 +547,19 @@ export function transformComponentNames(options: PluginOptions): Plugin {
                   );
                   continue;
                 }
+                if (!isValidCustomElementName(shortName)) {
+                  this.warn(
+                    `componentRegistries: "${shortName}" is not a valid custom element name. Skipping.`,
+                  );
+                  continue;
+                }
+                if (!isValidCustomElementName(entry.element)) {
+                  this.warn(
+                    `componentRegistries: element "${entry.element}" for "${shortName}" ` +
+                      `is not a valid custom element name. Skipping.`,
+                  );
+                  continue;
+                }
                 componentMap[shortName] = entry.element;
                 resolvedLibraryMap.set(shortName, {
                   resolvedTagName: entry.element,

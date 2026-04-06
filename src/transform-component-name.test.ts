@@ -440,9 +440,301 @@ describe('transformComponentNames plugin', () => {
     });
   });
 
-  // ─── componentRegistries validation ─────────────────────────────────────────
+  // ─── componentRegistries option ──────────────────────────────────────────────
 
-  describe('componentRegistries validation', () => {
+  describe('componentRegistries option', () => {
+    // ── loading ────────────────────────────────────────────────────────────────
+
+    it('loads a registry JSON via absolute path', () => {
+      withTempDir((dir) => {
+        const registryPath = writeFile(
+          dir,
+          'registry.json',
+          JSON.stringify({
+            'status-badge': {
+              element: 'px-lib-status-badge-v2-0-0',
+              className: 'StatusBadge',
+              package: '@acme/components',
+            },
+          }),
+        );
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryPath],
+        });
+        const infoFn = vi.fn();
+        callBuildStart(plugin, { info: infoFn });
+
+        expect(infoFn).toHaveBeenCalledWith(
+          expect.stringContaining('Loaded 1 components from registry'),
+        );
+      });
+    });
+
+    it('loads a registry JSON via module specifier (node_modules)', () => {
+      withTempDir((dir) => {
+        // Simulate a node_modules package containing a registry file.
+        const pkgDir = path.join(dir, 'node_modules', '@acme', 'components');
+        fs.mkdirSync(pkgDir, { recursive: true });
+        const registryFile = path.join(pkgDir, 'registry.json');
+        fs.writeFileSync(
+          registryFile,
+          JSON.stringify({
+            'nav-bar': {
+              element: 'px-lib-nav-bar-v3-1-0',
+              className: 'NavBar',
+              package: '@acme/components',
+            },
+          }),
+        );
+        // Use the absolute path that require.resolve would return.
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryFile],
+        });
+        const infoFn = vi.fn();
+        callBuildStart(plugin, { info: infoFn });
+
+        expect(infoFn).toHaveBeenCalledWith(
+          expect.stringContaining('Loaded 1 components from registry'),
+        );
+      });
+    });
+
+    it('loads multiple entries from a single registry file', () => {
+      withTempDir((dir) => {
+        const registryPath = writeFile(
+          dir,
+          'registry.json',
+          JSON.stringify({
+            'data-grid': {
+              element: 'px-lib-data-grid-v1-0-0',
+              className: 'DataGrid',
+              package: '@acme/components',
+            },
+            'status-badge': {
+              element: 'px-lib-status-badge-v1-0-0',
+              className: 'StatusBadge',
+              package: '@acme/components',
+            },
+          }),
+        );
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryPath],
+        });
+        const infoFn = vi.fn();
+        callBuildStart(plugin, { info: infoFn });
+
+        expect(infoFn).toHaveBeenCalledWith(
+          expect.stringContaining('Loaded 2 components from registry'),
+        );
+      });
+    });
+
+    // ── tag rewrite + import/define injection ──────────────────────────────────
+
+    it('rewrites tags to the registry element name', () => {
+      withTempDir((dir) => {
+        const registryPath = writeFile(
+          dir,
+          'registry.json',
+          JSON.stringify({
+            'data-grid': {
+              element: 'px-lib-data-grid-v1-0-0',
+              className: 'DataGrid',
+              package: '@acme/components',
+            },
+          }),
+        );
+        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryPath],
+        });
+        callBuildStart(plugin);
+
+        const file = path.join(dir, 'my-component.ts');
+        const result = callTransform(
+          plugin,
+          'export class MyComponentComponent {}\n<data-grid></data-grid>',
+          file,
+        ) as { code: string };
+
+        expect(result.code).toContain('<px-lib-data-grid-v1-0-0');
+        expect(result.code).toContain('</px-lib-data-grid-v1-0-0>');
+        expect(result.code).not.toContain('<data-grid');
+      });
+    });
+
+    it('injects an import from the registry package field', () => {
+      withTempDir((dir) => {
+        const registryPath = writeFile(
+          dir,
+          'registry.json',
+          JSON.stringify({
+            'data-grid': {
+              element: 'px-lib-data-grid-v1-0-0',
+              className: 'DataGrid',
+              package: '@acme/components',
+            },
+          }),
+        );
+        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryPath],
+        });
+        callBuildStart(plugin);
+
+        const file = path.join(dir, 'my-component.ts');
+        const result = callTransform(
+          plugin,
+          'export class MyComponentComponent {}\n<data-grid></data-grid>',
+          file,
+        ) as { code: string };
+
+        expect(result.code).toContain("import { DataGrid } from '@acme/components';");
+      });
+    });
+
+    it('injects a customElements.define call with the registry element name', () => {
+      withTempDir((dir) => {
+        const registryPath = writeFile(
+          dir,
+          'registry.json',
+          JSON.stringify({
+            'data-grid': {
+              element: 'px-lib-data-grid-v1-0-0',
+              className: 'DataGrid',
+              package: '@acme/components',
+            },
+          }),
+        );
+        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryPath],
+        });
+        callBuildStart(plugin);
+
+        const file = path.join(dir, 'my-component.ts');
+        const result = callTransform(
+          plugin,
+          'export class MyComponentComponent {}\n<data-grid></data-grid>',
+          file,
+        ) as { code: string };
+
+        expect(result.code).toContain("customElements.get('px-lib-data-grid-v1-0-0')");
+        expect(result.code).toContain("customElements.define('px-lib-data-grid-v1-0-0', DataGrid");
+      });
+    });
+
+    it('uses each entry package field independently', () => {
+      withTempDir((dir) => {
+        const registryPath = writeFile(
+          dir,
+          'registry.json',
+          JSON.stringify({
+            'data-grid': {
+              element: 'px-lib-data-grid-v1-0-0',
+              className: 'DataGrid',
+              package: '@acme/grid-pkg',
+            },
+            'status-badge': {
+              element: 'px-lib-status-badge-v2-0-0',
+              className: 'StatusBadge',
+              package: '@acme/badge-pkg',
+            },
+          }),
+        );
+        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryPath],
+        });
+        callBuildStart(plugin);
+
+        const file = path.join(dir, 'my-component.ts');
+        const result = callTransform(
+          plugin,
+          'export class MyComponentComponent {}\n<data-grid></data-grid>\n<status-badge></status-badge>',
+          file,
+        ) as { code: string };
+
+        expect(result.code).toContain("import { DataGrid } from '@acme/grid-pkg';");
+        expect(result.code).toContain("import { StatusBadge } from '@acme/badge-pkg';");
+      });
+    });
+
+    // ── invalid entries ────────────────────────────────────────────────────────
+
+    it('warns and skips an entry with missing element field', () => {
+      withTempDir((dir) => {
+        const registryPath = writeFile(
+          dir,
+          'registry.json',
+          JSON.stringify({
+            'my-tag': { className: 'MyTag', package: 'some-pkg' },
+          }),
+        );
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryPath],
+        });
+        const warnFn = vi.fn();
+        callBuildStart(plugin, { warn: warnFn });
+
+        expect(warnFn).toHaveBeenCalledWith(
+          expect.stringContaining('skipping invalid entry "my-tag"'),
+        );
+      });
+    });
+
+    it('warns and skips an entry with missing className field', () => {
+      withTempDir((dir) => {
+        const registryPath = writeFile(
+          dir,
+          'registry.json',
+          JSON.stringify({
+            'my-tag': { element: 'px-my-tag-v1', package: 'some-pkg' },
+          }),
+        );
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryPath],
+        });
+        const warnFn = vi.fn();
+        callBuildStart(plugin, { warn: warnFn });
+
+        expect(warnFn).toHaveBeenCalledWith(
+          expect.stringContaining('skipping invalid entry "my-tag"'),
+        );
+      });
+    });
+
+    it('warns and skips an entry with missing package field', () => {
+      withTempDir((dir) => {
+        const registryPath = writeFile(
+          dir,
+          'registry.json',
+          JSON.stringify({
+            'my-tag': { element: 'px-my-tag-v1', className: 'MyTag' },
+          }),
+        );
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryPath],
+        });
+        const warnFn = vi.fn();
+        callBuildStart(plugin, { warn: warnFn });
+
+        expect(warnFn).toHaveBeenCalledWith(
+          expect.stringContaining('skipping invalid entry "my-tag"'),
+        );
+      });
+    });
+
     it('warns and skips a registry entry whose key is not a valid custom element name', () => {
       withTempDir((dir) => {
         const registryPath = writeFile(
@@ -497,6 +789,33 @@ describe('transformComponentNames plugin', () => {
       });
     });
 
+    it('warns when the registry path cannot be resolved', () => {
+      withTempDir((dir) => {
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: ['nonexistent-package/registry.json'],
+        });
+        const warnFn = vi.fn();
+        callBuildStart(plugin, { warn: warnFn });
+
+        expect(warnFn).toHaveBeenCalledWith(expect.stringContaining('could not resolve'));
+      });
+    });
+
+    it('warns when the registry file contains invalid JSON', () => {
+      withTempDir((dir) => {
+        const registryPath = writeFile(dir, 'registry.json', '{ not valid json }');
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryPath],
+        });
+        const warnFn = vi.fn();
+        callBuildStart(plugin, { warn: warnFn });
+
+        expect(warnFn).toHaveBeenCalledWith(expect.stringContaining('failed to parse'));
+      });
+    });
+
     it('does not warn for valid registry entries', () => {
       withTempDir((dir) => {
         const registryPath = writeFile(
@@ -518,6 +837,92 @@ describe('transformComponentNames plugin', () => {
         callBuildStart(plugin, { warn: warnFn });
 
         expect(warnFn).not.toHaveBeenCalled();
+      });
+    });
+
+    // ── collision behavior ─────────────────────────────────────────────────────
+
+    it('registry entry overrides a file-discovered component with the same name', () => {
+      withTempDir((dir) => {
+        // Create a file-discovered component named "key-value".
+        writeFile(dir, 'key-value.ts', 'export class KeyValueComponent {}');
+
+        // Create a registry that also maps "key-value".
+        const registryPath = writeFile(
+          dir,
+          'registry.json',
+          JSON.stringify({
+            'key-value': {
+              element: 'px-lib-key-value-v5-0-0',
+              className: 'KeyValue',
+              package: '@acme/components',
+            },
+          }),
+        );
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryPath],
+        });
+        callBuildStart(plugin);
+
+        // Transform a different file that uses <key-value>; the tag should
+        // resolve to the registry's element name, not the file-discovered hash.
+        writeFile(dir, 'other.ts', 'export class OtherComponent {}');
+        const file = path.join(dir, 'other.ts');
+        const result = callTransform(
+          plugin,
+          'export class OtherComponent {}\n<key-value></key-value>',
+          file,
+        ) as { code: string };
+
+        expect(result.code).toContain('px-lib-key-value-v5-0-0');
+        expect(result.code).not.toContain('px-int-');
+      });
+    });
+
+    it('a later registry overrides an earlier registry for the same key', () => {
+      withTempDir((dir) => {
+        const registryA = writeFile(
+          dir,
+          'registry-a.json',
+          JSON.stringify({
+            'data-grid': {
+              element: 'px-lib-data-grid-v1-0-0',
+              className: 'DataGridOld',
+              package: '@acme/old-pkg',
+            },
+          }),
+        );
+        const registryB = writeFile(
+          dir,
+          'registry-b.json',
+          JSON.stringify({
+            'data-grid': {
+              element: 'px-lib-data-grid-v2-0-0',
+              className: 'DataGridNew',
+              package: '@acme/new-pkg',
+            },
+          }),
+        );
+        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryA, registryB],
+        });
+        callBuildStart(plugin);
+
+        const file = path.join(dir, 'my-component.ts');
+        const result = callTransform(
+          plugin,
+          'export class MyComponentComponent {}\n<data-grid></data-grid>',
+          file,
+        ) as { code: string };
+
+        // The second registry should win.
+        expect(result.code).toContain('px-lib-data-grid-v2-0-0');
+        expect(result.code).toContain("import { DataGridNew } from '@acme/new-pkg';");
+        expect(result.code).not.toContain('px-lib-data-grid-v1-0-0');
+        expect(result.code).not.toContain('@acme/old-pkg');
       });
     });
   });

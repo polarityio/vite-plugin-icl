@@ -1,4 +1,4 @@
-# vite-plugin-icl
+# @polarityio/vite-plugin-icl
 
 [![CI](https://github.com/polarityio/vite-plugin-icl/actions/workflows/ci.yml/badge.svg)](https://github.com/polarityio/vite-plugin-icl/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/polarityio/vite-plugin-icl/branch/main/graph/badge.svg)](https://codecov.io/gh/polarityio/vite-plugin-icl)
@@ -47,7 +47,7 @@ They are transformed into collision-proof names during the build:
 ## Installation
 
 ```bash
-npm install --save-dev vite-plugin-icl
+npm install --save-dev @polarityio/vite-plugin-icl
 ```
 
 ---
@@ -60,7 +60,7 @@ Point `build.lib.entry` at `VIRTUAL_COMPONENTS_ID` and tell the plugin where you
 // vite.config.ts
 import { defineConfig } from 'vite';
 import { resolve } from 'node:path';
-import { transformComponentNames, VIRTUAL_COMPONENTS_ID } from 'vite-plugin-icl';
+import { transformComponentNames, VIRTUAL_COMPONENTS_ID } from '@polarityio/vite-plugin-icl';
 
 export default defineConfig({
   plugins: [
@@ -142,7 +142,7 @@ If your library also exports utilities, types, or constants alongside your compo
 // vite.config.ts
 import { defineConfig } from 'vite';
 import { resolve } from 'node:path';
-import { transformComponentNames, VIRTUAL_COMPONENTS_ID } from 'vite-plugin-icl';
+import { transformComponentNames, VIRTUAL_COMPONENTS_ID } from '@polarityio/vite-plugin-icl';
 
 export default defineConfig({
   plugins: [

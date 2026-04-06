@@ -17,7 +17,7 @@ const pkg: { name?: string; version?: string } = require('../package.json');
  *
  * @example
  * // vite.config.ts
- * import { VIRTUAL_COMPONENTS_ID } from 'vite-plugin-icl';
+ * import { VIRTUAL_COMPONENTS_ID } from '@polarityio/vite-plugin-icl';
  *
  * export default defineConfig({
  *   build: { lib: { entry: VIRTUAL_COMPONENTS_ID } }
@@ -294,7 +294,7 @@ export interface PluginOptions {
    *
    * @example
    * // vite.config.ts
-   * import { VIRTUAL_COMPONENTS_ID } from 'vite-plugin-icl';
+   * import { VIRTUAL_COMPONENTS_ID } from '@polarityio/vite-plugin-icl';
    * import { resolve } from 'node:path';
    *
    * export default defineConfig({

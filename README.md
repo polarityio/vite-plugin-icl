@@ -1,4 +1,4 @@
-# vite-plugin-icl
+# @polarityio/vite-plugin-icl
 
 [![CI](https://github.com/polarityio/vite-plugin-icl/actions/workflows/ci.yml/badge.svg)](https://github.com/polarityio/vite-plugin-icl/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/polarityio/vite-plugin-icl/branch/main/graph/badge.svg)](https://codecov.io/gh/polarityio/vite-plugin-icl)
@@ -31,6 +31,7 @@ They are transformed into collision-proof names during the build:
 - [System Components](#system-components)
 - [Library Component Aliases](#library-component-aliases)
 - [Custom Library Components](#custom-library-components)
+- [Component Registries](#component-registries)
 - [Plugin Options](#plugin-options)
 - [Contributing](#contributing)
 
@@ -46,7 +47,7 @@ They are transformed into collision-proof names during the build:
 ## Installation
 
 ```bash
-npm install --save-dev vite-plugin-icl
+npm install --save-dev @polarityio/vite-plugin-icl
 ```
 
 ---
@@ -59,7 +60,7 @@ Point `build.lib.entry` at `VIRTUAL_COMPONENTS_ID` and tell the plugin where you
 // vite.config.ts
 import { defineConfig } from 'vite';
 import { resolve } from 'node:path';
-import { transformComponentNames, VIRTUAL_COMPONENTS_ID } from 'vite-plugin-icl';
+import { transformComponentNames, VIRTUAL_COMPONENTS_ID } from '@polarityio/vite-plugin-icl';
 
 export default defineConfig({
   plugins: [
@@ -141,7 +142,7 @@ If your library also exports utilities, types, or constants alongside your compo
 // vite.config.ts
 import { defineConfig } from 'vite';
 import { resolve } from 'node:path';
-import { transformComponentNames, VIRTUAL_COMPONENTS_ID } from 'vite-plugin-icl';
+import { transformComponentNames, VIRTUAL_COMPONENTS_ID } from '@polarityio/vite-plugin-icl';
 
 export default defineConfig({
   plugins: [
@@ -249,12 +250,21 @@ When the plugin discovers a file whose derived name matches a `type` in this lis
 
 ## Library Component Aliases
 
-When `integration-component-library` is installed in your project, the plugin automatically rewrites its component tags (e.g. `<object-to-table>`) into their resolved versioned names at build time, and injects the corresponding `import` and `customElements.define(...)` calls.
+When `integration-component-library` is installed in your project, the plugin can automatically rewrite its component tags into their resolved versioned names at build time, and inject the corresponding `import` and `customElements.define(...)` calls. Register library components via the `libraryComponents` option:
+
+```ts
+transformComponentNames({
+  componentsDir: resolve(__dirname, 'src/web-components'),
+  libraryComponents: {
+    'data-grid': { className: 'DataGrid' },
+  },
+})
+```
 
 | Write this | Transforms to |
 |---|---|
-| `<object-to-table>` | `<px-lib-object-to-table-v1-0-0>` |
-| `</object-to-table>` | `</px-lib-object-to-table-v1-0-0>` |
+| `<data-grid>` | `<px-lib-data-grid-v1-0-0>` |
+| `</data-grid>` | `</px-lib-data-grid-v1-0-0>` |
 
 The resolved name is computed from the library's `package.json` version using the formula `px-lib-{name}-v{version}` (with dots replaced by hyphens). No library code is executed at build time.
 
@@ -273,7 +283,7 @@ If `integration-component-library` is not installed, library component rewriting
 
 ## Custom Library Components
 
-If `integration-component-library` ships new components that the plugin doesn't know about yet, you can register them yourself with the `libraryComponents` option. Each key is the short tag name (kebab-case) and the value specifies the named class export from the library:
+If `integration-component-library` ships components, you can register them with the `libraryComponents` option. Each key is the short tag name (kebab-case) and the value specifies the named class export from the library:
 
 ```ts
 // vite.config.ts
@@ -286,16 +296,95 @@ transformComponentNames({
 })
 ```
 
-These entries are merged with the plugin's built-in definitions (e.g. `object-to-table`). The plugin then handles them identically — rewriting tags, injecting imports, and registering them via `customElements.define(...)`.
+These entries are used by the plugin to rewrite tags, inject imports, and register them via `customElements.define(...)`.
 
 | Write this | Transforms to |
 |---|---|
 | `<data-grid>` | `<px-lib-data-grid-v1-0-0>` |
 | `<status-badge>` | `<px-lib-status-badge-v1-0-0>` |
 
-If a key in `libraryComponents` conflicts with a built-in definition, the user-provided value takes precedence and the plugin emits a build warning.
-
 > **Note:** `libraryComponents` is ignored when `rewriteLibraryComponents` is set to `false`.
+
+---
+
+## Component Registries
+
+Component registries provide a **generic, convention-free** way for any component library to declare its tag-name mappings. The plugin reads a JSON file exported by the library and automatically handles tag rewriting, imports, and `customElements.define(...)` injection — without hard-coding any naming conventions.
+
+### Using a Registry
+
+Point the `componentRegistries` option at one or more registry JSON files. Module specifiers are resolved via `require.resolve()` (found in `node_modules` automatically):
+
+```ts
+// vite.config.ts
+transformComponentNames({
+  componentsDir: resolve(__dirname, 'src/web-components'),
+  componentRegistries: [
+    'integration-component-library/component-registry.json',
+  ],
+})
+```
+
+Multiple registries are supported — for example, if you consume components from several libraries:
+
+```ts
+componentRegistries: [
+  'integration-component-library/component-registry.json',
+  '@acme/ui-library/component-registry.json',
+],
+```
+
+With a registry loaded, you can use simple tag names in your templates:
+
+| Write this | Transforms to |
+|---|---|
+| `<pi-button>` | `<pi-button-v1-0-0>` |
+| `<pi-key-value>` | `<pi-key-value-v1-0-0>` |
+
+The plugin also injects the corresponding `import` and `customElements.define(...)` calls so the components are bundled and registered automatically.
+
+### Publishing a Registry
+
+To make your component library compatible with `componentRegistries`, generate and export a JSON file in this format:
+
+```json
+{
+  "pi-button": {
+    "element": "pi-button-v1-0-0",
+    "className": "PiButton",
+    "package": "@polarity/button"
+  },
+  "pi-checkbox": {
+    "element": "pi-checkbox-v1-0-0",
+    "className": "PiCheckbox",
+    "package": "@polarity/checkbox"
+  }
+}
+```
+
+**Fields:**
+
+| Field | Type | Description |
+|---|---|---|
+| *key* | `string` | The short tag name developers write in templates (e.g. `pi-button`) |
+| `element` | `string` | The globally unique element name to register (e.g. `pi-button-v1-0-0`) |
+| `className` | `string` | The named class export from the package (e.g. `PiButton`) |
+| `package` | `string` | The npm package to import the class from (e.g. `@polarity/button`) |
+
+**Steps to publish:**
+
+1. **Generate the registry at build time** — write a script that scans your component packages, reads each `package.json` version, and outputs the JSON mapping. This avoids manual maintenance.
+
+2. **Export the file in `package.json`** — add an exports entry so the plugin can resolve it:
+   ```json
+   {
+     "exports": {
+       "./component-registry.json": "./dist/component-registry.json"
+     }
+   }
+   ```
+
+3. **Include it in the published package** — ensure `dist/component-registry.json` is in your `files` array or not excluded by `.npmignore`.
 
 ---
 
@@ -345,7 +434,7 @@ See [Exporting Additional Files](#exporting-additional-files) for a full example
 |---|---|
 | `boolean` | `true` |
 
-When `true`, the plugin rewrites `integration-component-library` component tags (e.g. `<object-to-table>`) into their resolved versioned names and injects `import` / `customElements.define(...)` calls automatically.
+When `true`, the plugin rewrites `integration-component-library` component tags (registered via `libraryComponents`) into their resolved versioned names and injects `import` / `customElements.define(...)` calls automatically.
 
 Set to `false` to handle library components yourself.
 
@@ -359,13 +448,29 @@ See [Library Component Aliases](#library-component-aliases) for details.
 |---|---|
 | `Record<string, { className: string }>` | — |
 
-Additional library component definitions to register alongside the built-in ones. Each key is the short tag name (kebab-case) and the value specifies the named export from `integration-component-library`.
+Additional library component definitions to register. Each key is the short tag name (kebab-case) and the value specifies the named export from `integration-component-library`.
 
-User-provided entries are merged with the built-in definitions. If a key conflicts with a built-in definition, the user-provided value takes precedence and a build warning is emitted.
+User-provided entries are resolved at build time. If a key conflicts with a built-in definition, the user-provided value takes precedence and a build warning is emitted.
 
 This option is ignored when `rewriteLibraryComponents` is set to `false`.
 
 See [Custom Library Components](#custom-library-components) for a full example.
+
+---
+
+### `componentRegistries`
+
+| Type | Default |
+|---|---|
+| `string[]` | — |
+
+An array of component registry module specifiers or absolute file paths. Each entry points to a JSON file that maps short tag names to their versioned element names, class names, and source packages.
+
+Module specifiers are resolved via `require.resolve()` (found in `node_modules` automatically). Absolute paths are used as-is.
+
+This option is ignored when `rewriteLibraryComponents` is set to `false`.
+
+See [Component Registries](#component-registries) for format details and a full example.
 
 ---
 

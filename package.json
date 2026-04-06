@@ -1,6 +1,6 @@
 {
-  "name": "vite-plugin-icl",
-  "version": "0.4.0",
+  "name": "@polarityio/vite-plugin-icl",
+  "version": "1.0.0",
   "description": "Vite plugin for the Polarity integration framework – transforms web component names into unique names.",
   "type": "module",
   "main": "dist/index.cjs",
@@ -33,7 +33,19 @@
     "web-components",
     "polarity"
   ],
+  "author": "Polarity.io",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/polarityio/vite-plugin-icl.git"
+  },
+  "homepage": "https://github.com/polarityio/vite-plugin-icl#readme",
+  "bugs": {
+    "url": "https://github.com/polarityio/vite-plugin-icl/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "peerDependencies": {
     "vite": ">=5"
   },
@@ -55,7 +67,7 @@
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.56.1",
-    "vite": "^7.3.1",
+    "vite": "^7.3.2",
     "vitest": "^4.0.18"
   }
 }

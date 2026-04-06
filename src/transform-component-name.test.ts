@@ -267,7 +267,7 @@ describe('transformComponentNames plugin', () => {
 
       expect(infoFn).toHaveBeenCalledOnce();
       expect(infoFn).toHaveBeenCalledWith(
-        expect.stringMatching(/^vite-plugin-icl v\d+\.\d+\.\d+$/),
+        expect.stringMatching(/^@polarityio\/vite-plugin-icl v\d+\.\d+\.\d+$/),
       );
     });
   });
@@ -308,11 +308,16 @@ describe('transformComponentNames plugin', () => {
 
   it('skips library component handling when the library is not available', () => {
     withTempDir((dir) => {
-      const plugin = transformComponentNames({ componentsDir: dir });
+      const plugin = transformComponentNames({
+        componentsDir: dir,
+        libraryComponents: {
+          'data-grid': { className: 'DataGrid' },
+        },
+      });
       callBuildStart(plugin);
       const file = path.join(dir, 'other.ts');
       writeFile(dir, 'other.ts', 'const x = 1;');
-      const result = callTransform(plugin, '<object-to-table></object-to-table>', file);
+      const result = callTransform(plugin, '<data-grid></data-grid>', file);
       expect(result).toBeNull();
     });
   });
@@ -322,135 +327,15 @@ describe('transformComponentNames plugin', () => {
       const plugin = transformComponentNames({
         componentsDir: dir,
         rewriteLibraryComponents: false,
+        libraryComponents: {
+          'data-grid': { className: 'DataGrid' },
+        },
       });
       callBuildStart(plugin);
       const file = path.join(dir, 'my-component.ts');
       writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
-      const result = callTransform(plugin, '<object-to-table .data=${x}></object-to-table>', file);
+      const result = callTransform(plugin, '<data-grid .data=${x}></data-grid>', file);
       expect(result).toBeNull();
-    });
-  });
-
-  describe('library component transforms (object-to-table)', () => {
-    const MOCK_LIB_VERSION = '1.0.0';
-    const MOCK_OTT_NAME = 'px-lib-object-to-table-v1-0-0';
-    const mockLibDir = path.resolve(process.cwd(), 'node_modules', 'integration-component-library');
-    const mockPkgPath = path.join(mockLibDir, 'package.json');
-    let hadMockLib: boolean;
-    let hadPkgJson: boolean;
-    let originalPkgJson: string | undefined;
-
-    beforeEach(() => {
-      hadMockLib = fs.existsSync(mockLibDir);
-      hadPkgJson = fs.existsSync(mockPkgPath);
-      if (!hadMockLib) {
-        fs.mkdirSync(mockLibDir, { recursive: true });
-      } else if (hadPkgJson) {
-        originalPkgJson = fs.readFileSync(mockPkgPath, 'utf-8');
-      }
-      fs.writeFileSync(
-        mockPkgPath,
-        JSON.stringify({ name: 'integration-component-library', version: MOCK_LIB_VERSION }),
-      );
-    });
-
-    afterEach(() => {
-      if (!hadMockLib) {
-        fs.rmSync(mockLibDir, { recursive: true, force: true });
-      } else if (hadPkgJson && originalPkgJson !== undefined) {
-        fs.writeFileSync(mockPkgPath, originalPkgJson);
-        originalPkgJson = undefined;
-      } else if (!hadPkgJson) {
-        fs.rmSync(mockPkgPath, { force: true });
-      }
-    });
-
-    it('rewrites an opening tag to the resolved concrete name', () => {
-      withTempDir((dir) => {
-        const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
-        const file = path.join(dir, 'my-component.ts');
-        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
-        const result = callTransform(plugin, `<object-to-table .data=\${x}>`, file) as {
-          code: string;
-        };
-        expect(result.code).toContain(`<${MOCK_OTT_NAME} .data=\${x}>`);
-      });
-    });
-
-    it('rewrites a closing tag to the resolved concrete name', () => {
-      withTempDir((dir) => {
-        const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
-        const file = path.join(dir, 'my-component.ts');
-        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
-        const result = callTransform(plugin, '</object-to-table>', file) as { code: string };
-        expect(result.code).toContain(`</${MOCK_OTT_NAME}>`);
-      });
-    });
-
-    it('rewrites both opening and closing tags', () => {
-      withTempDir((dir) => {
-        const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
-        const file = path.join(dir, 'my-component.ts');
-        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
-        const result = callTransform(
-          plugin,
-          '<object-to-table .data=${x}></object-to-table>',
-          file,
-        ) as { code: string };
-        expect(result.code).toContain(`<${MOCK_OTT_NAME} .data=\${x}>`);
-        expect(result.code).toContain(`</${MOCK_OTT_NAME}>`);
-      });
-    });
-
-    it('injects the library import statement', () => {
-      withTempDir((dir) => {
-        const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
-        const file = path.join(dir, 'my-component.ts');
-        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
-        const result = callTransform(plugin, '<object-to-table></object-to-table>', file) as {
-          code: string;
-        };
-        expect(result.code).toContain(
-          "import { ObjectToTable } from 'integration-component-library';",
-        );
-      });
-    });
-
-    it('injects the registration block for the library component', () => {
-      withTempDir((dir) => {
-        const plugin = transformComponentNames({ componentsDir: dir });
-        callBuildStart(plugin);
-        const file = path.join(dir, 'my-component.ts');
-        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
-        const result = callTransform(plugin, '<object-to-table></object-to-table>', file) as {
-          code: string;
-        };
-        expect(result.code).toContain(`customElements.get('${MOCK_OTT_NAME}')`);
-        expect(result.code).toContain(
-          `customElements.define('${MOCK_OTT_NAME}', ObjectToTable as unknown as CustomElementConstructor)`,
-        );
-      });
-    });
-    it('does not rewrite library tags when rewriteLibraryComponents is false even if library is installed', () => {
-      withTempDir((dir) => {
-        const plugin = transformComponentNames({
-          componentsDir: dir,
-          rewriteLibraryComponents: false,
-        });
-        callBuildStart(plugin);
-        const file = path.join(dir, 'my-component.ts');
-        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
-        const result = callTransform(
-          plugin,
-          '<object-to-table .data=${x}></object-to-table>',
-          file,
-        );
-        expect(result).toBeNull();
-      });
     });
   });
 
@@ -509,53 +394,28 @@ describe('transformComponentNames plugin', () => {
       });
     });
 
-    it('uses user value and warns when overriding a built-in definition', () => {
-      withTempDir((dir) => {
-        const plugin = transformComponentNames({
-          componentsDir: dir,
-          libraryComponents: {
-            'object-to-table': { className: 'MyCustomObjectToTable' },
-          },
-        });
-        const warnFn = vi.fn();
-        callBuildStart(plugin, { warn: warnFn });
-
-        expect(warnFn).toHaveBeenCalledWith(
-          expect.stringContaining('overrides built-in definition'),
-        );
-
-        const file = path.join(dir, 'my-component.ts');
-        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
-        const result = callTransform(plugin, '<object-to-table></object-to-table>', file) as {
-          code: string;
-        };
-        expect(result.code).toContain(
-          "import { MyCustomObjectToTable } from 'integration-component-library';",
-        );
-      });
-    });
-
-    it('preserves built-in defs alongside user-provided defs', () => {
+    it('resolves and rewrites multiple user-provided library components', () => {
       withTempDir((dir) => {
         const plugin = transformComponentNames({
           componentsDir: dir,
           libraryComponents: {
             'status-badge': { className: 'StatusBadge' },
+            'data-grid': { className: 'DataGrid' },
           },
         });
         callBuildStart(plugin);
         const file = path.join(dir, 'my-component.ts');
         writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
 
-        const ottResult = callTransform(plugin, '<object-to-table></object-to-table>', file) as {
-          code: string;
-        };
-        expect(ottResult.code).toContain('px-lib-object-to-table-v1-0-0');
-
         const badgeResult = callTransform(plugin, '<status-badge></status-badge>', file) as {
           code: string;
         };
         expect(badgeResult.code).toContain('px-lib-status-badge-v1-0-0');
+
+        const gridResult = callTransform(plugin, '<data-grid></data-grid>', file) as {
+          code: string;
+        };
+        expect(gridResult.code).toContain('px-lib-data-grid-v1-0-0');
       });
     });
 
@@ -578,27 +438,491 @@ describe('transformComponentNames plugin', () => {
         );
       });
     });
+  });
 
-    it('emits correct override warnings consistently across repeated buildStart calls', () => {
+  // ─── componentRegistries option ──────────────────────────────────────────────
+
+  describe('componentRegistries option', () => {
+    // ── loading ────────────────────────────────────────────────────────────────
+
+    it('loads a registry JSON via absolute path', () => {
       withTempDir((dir) => {
+        const registryPath = writeFile(
+          dir,
+          'registry.json',
+          JSON.stringify({
+            'status-badge': {
+              element: 'px-lib-status-badge-v2-0-0',
+              className: 'StatusBadge',
+              package: '@acme/components',
+            },
+          }),
+        );
         const plugin = transformComponentNames({
           componentsDir: dir,
-          libraryComponents: {
-            'object-to-table': { className: 'MyCustomObjectToTable' },
-          },
+          componentRegistries: [registryPath],
+        });
+        const infoFn = vi.fn();
+        callBuildStart(plugin, { info: infoFn });
+
+        expect(infoFn).toHaveBeenCalledWith(
+          expect.stringContaining('Loaded 1 components from registry'),
+        );
+      });
+    });
+
+    it('loads a registry JSON via module specifier (node_modules)', () => {
+      withTempDir((dir) => {
+        // Simulate a node_modules package containing a registry file.
+        const pkgDir = path.join(dir, 'node_modules', '@acme', 'components');
+        fs.mkdirSync(pkgDir, { recursive: true });
+        const registryFile = path.join(pkgDir, 'registry.json');
+        fs.writeFileSync(
+          registryFile,
+          JSON.stringify({
+            'nav-bar': {
+              element: 'px-lib-nav-bar-v3-1-0',
+              className: 'NavBar',
+              package: '@acme/components',
+            },
+          }),
+        );
+        // Use the absolute path that require.resolve would return.
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryFile],
+        });
+        const infoFn = vi.fn();
+        callBuildStart(plugin, { info: infoFn });
+
+        expect(infoFn).toHaveBeenCalledWith(
+          expect.stringContaining('Loaded 1 components from registry'),
+        );
+      });
+    });
+
+    it('loads multiple entries from a single registry file', () => {
+      withTempDir((dir) => {
+        const registryPath = writeFile(
+          dir,
+          'registry.json',
+          JSON.stringify({
+            'data-grid': {
+              element: 'px-lib-data-grid-v1-0-0',
+              className: 'DataGrid',
+              package: '@acme/components',
+            },
+            'status-badge': {
+              element: 'px-lib-status-badge-v1-0-0',
+              className: 'StatusBadge',
+              package: '@acme/components',
+            },
+          }),
+        );
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryPath],
+        });
+        const infoFn = vi.fn();
+        callBuildStart(plugin, { info: infoFn });
+
+        expect(infoFn).toHaveBeenCalledWith(
+          expect.stringContaining('Loaded 2 components from registry'),
+        );
+      });
+    });
+
+    // ── tag rewrite + import/define injection ──────────────────────────────────
+
+    it('rewrites tags to the registry element name', () => {
+      withTempDir((dir) => {
+        const registryPath = writeFile(
+          dir,
+          'registry.json',
+          JSON.stringify({
+            'data-grid': {
+              element: 'px-lib-data-grid-v1-0-0',
+              className: 'DataGrid',
+              package: '@acme/components',
+            },
+          }),
+        );
+        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryPath],
+        });
+        callBuildStart(plugin);
+
+        const file = path.join(dir, 'my-component.ts');
+        const result = callTransform(
+          plugin,
+          'export class MyComponentComponent {}\n<data-grid></data-grid>',
+          file,
+        ) as { code: string };
+
+        expect(result.code).toContain('<px-lib-data-grid-v1-0-0');
+        expect(result.code).toContain('</px-lib-data-grid-v1-0-0>');
+        expect(result.code).not.toContain('<data-grid');
+      });
+    });
+
+    it('injects an import from the registry package field', () => {
+      withTempDir((dir) => {
+        const registryPath = writeFile(
+          dir,
+          'registry.json',
+          JSON.stringify({
+            'data-grid': {
+              element: 'px-lib-data-grid-v1-0-0',
+              className: 'DataGrid',
+              package: '@acme/components',
+            },
+          }),
+        );
+        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryPath],
+        });
+        callBuildStart(plugin);
+
+        const file = path.join(dir, 'my-component.ts');
+        const result = callTransform(
+          plugin,
+          'export class MyComponentComponent {}\n<data-grid></data-grid>',
+          file,
+        ) as { code: string };
+
+        expect(result.code).toContain("import { DataGrid } from '@acme/components';");
+      });
+    });
+
+    it('injects a customElements.define call with the registry element name', () => {
+      withTempDir((dir) => {
+        const registryPath = writeFile(
+          dir,
+          'registry.json',
+          JSON.stringify({
+            'data-grid': {
+              element: 'px-lib-data-grid-v1-0-0',
+              className: 'DataGrid',
+              package: '@acme/components',
+            },
+          }),
+        );
+        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryPath],
+        });
+        callBuildStart(plugin);
+
+        const file = path.join(dir, 'my-component.ts');
+        const result = callTransform(
+          plugin,
+          'export class MyComponentComponent {}\n<data-grid></data-grid>',
+          file,
+        ) as { code: string };
+
+        expect(result.code).toContain("customElements.get('px-lib-data-grid-v1-0-0')");
+        expect(result.code).toContain("customElements.define('px-lib-data-grid-v1-0-0', DataGrid");
+      });
+    });
+
+    it('uses each entry package field independently', () => {
+      withTempDir((dir) => {
+        const registryPath = writeFile(
+          dir,
+          'registry.json',
+          JSON.stringify({
+            'data-grid': {
+              element: 'px-lib-data-grid-v1-0-0',
+              className: 'DataGrid',
+              package: '@acme/grid-pkg',
+            },
+            'status-badge': {
+              element: 'px-lib-status-badge-v2-0-0',
+              className: 'StatusBadge',
+              package: '@acme/badge-pkg',
+            },
+          }),
+        );
+        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryPath],
+        });
+        callBuildStart(plugin);
+
+        const file = path.join(dir, 'my-component.ts');
+        const result = callTransform(
+          plugin,
+          'export class MyComponentComponent {}\n<data-grid></data-grid>\n<status-badge></status-badge>',
+          file,
+        ) as { code: string };
+
+        expect(result.code).toContain("import { DataGrid } from '@acme/grid-pkg';");
+        expect(result.code).toContain("import { StatusBadge } from '@acme/badge-pkg';");
+      });
+    });
+
+    // ── invalid entries ────────────────────────────────────────────────────────
+
+    it('warns and skips an entry with missing element field', () => {
+      withTempDir((dir) => {
+        const registryPath = writeFile(
+          dir,
+          'registry.json',
+          JSON.stringify({
+            'my-tag': { className: 'MyTag', package: 'some-pkg' },
+          }),
+        );
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryPath],
         });
         const warnFn = vi.fn();
         callBuildStart(plugin, { warn: warnFn });
+
+        expect(warnFn).toHaveBeenCalledWith(
+          expect.stringContaining('skipping invalid entry "my-tag"'),
+        );
+      });
+    });
+
+    it('warns and skips an entry with missing className field', () => {
+      withTempDir((dir) => {
+        const registryPath = writeFile(
+          dir,
+          'registry.json',
+          JSON.stringify({
+            'my-tag': { element: 'px-my-tag-v1', package: 'some-pkg' },
+          }),
+        );
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryPath],
+        });
+        const warnFn = vi.fn();
         callBuildStart(plugin, { warn: warnFn });
 
-        const overrideCalls = warnFn.mock.calls.filter((args: string[]) =>
-          args[0].includes('overrides built-in definition'),
+        expect(warnFn).toHaveBeenCalledWith(
+          expect.stringContaining('skipping invalid entry "my-tag"'),
         );
-        expect(overrideCalls).toHaveLength(2);
-        for (const call of overrideCalls) {
-          expect(call[0]).toContain('className "ObjectToTable"');
-          expect(call[0]).toContain('"MyCustomObjectToTable"');
-        }
+      });
+    });
+
+    it('warns and skips an entry with missing package field', () => {
+      withTempDir((dir) => {
+        const registryPath = writeFile(
+          dir,
+          'registry.json',
+          JSON.stringify({
+            'my-tag': { element: 'px-my-tag-v1', className: 'MyTag' },
+          }),
+        );
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryPath],
+        });
+        const warnFn = vi.fn();
+        callBuildStart(plugin, { warn: warnFn });
+
+        expect(warnFn).toHaveBeenCalledWith(
+          expect.stringContaining('skipping invalid entry "my-tag"'),
+        );
+      });
+    });
+
+    it('warns and skips a registry entry whose key is not a valid custom element name', () => {
+      withTempDir((dir) => {
+        const registryPath = writeFile(
+          dir,
+          'registry.json',
+          JSON.stringify({
+            nohyphen: {
+              element: 'some-element',
+              className: 'NoHyphen',
+              package: 'some-pkg',
+            },
+          }),
+        );
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryPath],
+        });
+        const warnFn = vi.fn();
+        callBuildStart(plugin, { warn: warnFn });
+
+        expect(warnFn).toHaveBeenCalledWith(
+          expect.stringContaining('"nohyphen" is not a valid custom element name'),
+        );
+      });
+    });
+
+    it('warns and skips a registry entry whose element value is not a valid custom element name', () => {
+      withTempDir((dir) => {
+        const registryPath = writeFile(
+          dir,
+          'registry.json',
+          JSON.stringify({
+            'my-tag': {
+              element: 'BadElement',
+              className: 'MyTag',
+              package: 'some-pkg',
+            },
+          }),
+        );
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryPath],
+        });
+        const warnFn = vi.fn();
+        callBuildStart(plugin, { warn: warnFn });
+
+        expect(warnFn).toHaveBeenCalledWith(
+          expect.stringContaining(
+            'element "BadElement" for "my-tag" is not a valid custom element name',
+          ),
+        );
+      });
+    });
+
+    it('warns when the registry path cannot be resolved', () => {
+      withTempDir((dir) => {
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: ['nonexistent-package/registry.json'],
+        });
+        const warnFn = vi.fn();
+        callBuildStart(plugin, { warn: warnFn });
+
+        expect(warnFn).toHaveBeenCalledWith(expect.stringContaining('could not resolve'));
+      });
+    });
+
+    it('warns when the registry file contains invalid JSON', () => {
+      withTempDir((dir) => {
+        const registryPath = writeFile(dir, 'registry.json', '{ not valid json }');
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryPath],
+        });
+        const warnFn = vi.fn();
+        callBuildStart(plugin, { warn: warnFn });
+
+        expect(warnFn).toHaveBeenCalledWith(expect.stringContaining('failed to parse'));
+      });
+    });
+
+    it('does not warn for valid registry entries', () => {
+      withTempDir((dir) => {
+        const registryPath = writeFile(
+          dir,
+          'registry.json',
+          JSON.stringify({
+            'data-grid': {
+              element: 'px-lib-data-grid-v1',
+              className: 'DataGrid',
+              package: 'some-pkg',
+            },
+          }),
+        );
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryPath],
+        });
+        const warnFn = vi.fn();
+        callBuildStart(plugin, { warn: warnFn });
+
+        expect(warnFn).not.toHaveBeenCalled();
+      });
+    });
+
+    // ── collision behavior ─────────────────────────────────────────────────────
+
+    it('registry entry overrides a file-discovered component with the same name', () => {
+      withTempDir((dir) => {
+        // Create a file-discovered component named "key-value".
+        writeFile(dir, 'key-value.ts', 'export class KeyValueComponent {}');
+
+        // Create a registry that also maps "key-value".
+        const registryPath = writeFile(
+          dir,
+          'registry.json',
+          JSON.stringify({
+            'key-value': {
+              element: 'px-lib-key-value-v5-0-0',
+              className: 'KeyValue',
+              package: '@acme/components',
+            },
+          }),
+        );
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryPath],
+        });
+        callBuildStart(plugin);
+
+        // Transform a different file that uses <key-value>; the tag should
+        // resolve to the registry's element name, not the file-discovered hash.
+        writeFile(dir, 'other.ts', 'export class OtherComponent {}');
+        const file = path.join(dir, 'other.ts');
+        const result = callTransform(
+          plugin,
+          'export class OtherComponent {}\n<key-value></key-value>',
+          file,
+        ) as { code: string };
+
+        expect(result.code).toContain('px-lib-key-value-v5-0-0');
+        expect(result.code).not.toContain('px-int-');
+      });
+    });
+
+    it('a later registry overrides an earlier registry for the same key', () => {
+      withTempDir((dir) => {
+        const registryA = writeFile(
+          dir,
+          'registry-a.json',
+          JSON.stringify({
+            'data-grid': {
+              element: 'px-lib-data-grid-v1-0-0',
+              className: 'DataGridOld',
+              package: '@acme/old-pkg',
+            },
+          }),
+        );
+        const registryB = writeFile(
+          dir,
+          'registry-b.json',
+          JSON.stringify({
+            'data-grid': {
+              element: 'px-lib-data-grid-v2-0-0',
+              className: 'DataGridNew',
+              package: '@acme/new-pkg',
+            },
+          }),
+        );
+        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryA, registryB],
+        });
+        callBuildStart(plugin);
+
+        const file = path.join(dir, 'my-component.ts');
+        const result = callTransform(
+          plugin,
+          'export class MyComponentComponent {}\n<data-grid></data-grid>',
+          file,
+        ) as { code: string };
+
+        // The second registry should win.
+        expect(result.code).toContain('px-lib-data-grid-v2-0-0');
+        expect(result.code).toContain("import { DataGridNew } from '@acme/new-pkg';");
+        expect(result.code).not.toContain('px-lib-data-grid-v1-0-0');
+        expect(result.code).not.toContain('@acme/old-pkg');
       });
     });
   });
@@ -659,15 +983,20 @@ describe('transformComponentNames plugin', () => {
       try {
         withTempDir((dir) => {
           writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
-          const plugin = transformComponentNames({ componentsDir: dir });
+          const plugin = transformComponentNames({
+            componentsDir: dir,
+            libraryComponents: {
+              'data-grid': { className: 'DataGrid' },
+            },
+          });
           const warnFn = vi.fn();
           callBuildStart(plugin, { warn: warnFn });
 
           // Library component should be rewritten after first build
           const file = path.join(dir, 'my-component.ts');
-          const code = 'export class MyComponentComponent {}\n<object-to-table></object-to-table>';
+          const code = 'export class MyComponentComponent {}\n<data-grid></data-grid>';
           const result1 = callTransform(plugin, code, file) as { code: string };
-          expect(result1.code).toContain('px-lib-object-to-table-v1-0-0');
+          expect(result1.code).toContain('px-lib-data-grid-v1-0-0');
 
           // Remove only package.json to simulate library removal without
           // destroying a real installed dependency's other files.
@@ -676,8 +1005,8 @@ describe('transformComponentNames plugin', () => {
 
           // Library component should no longer be rewritten
           const result2 = callTransform(plugin, code, file) as { code: string };
-          expect(result2.code).toContain('<object-to-table></object-to-table>');
-          expect(result2.code).not.toContain('px-lib-object-to-table');
+          expect(result2.code).toContain('<data-grid></data-grid>');
+          expect(result2.code).not.toContain('px-lib-data-grid');
         });
       } finally {
         // Restore original state

@@ -22,7 +22,7 @@
   "scripts": {
     "build": "tsup",
     "prepare": "husky",
-    "prepublishOnly": "tsup",
+    "prepublishOnly": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src",

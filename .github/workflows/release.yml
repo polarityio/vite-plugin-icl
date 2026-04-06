@@ -29,12 +29,12 @@ jobs:
         id: version
         run: echo "version=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
+      - name: Publish to npm
+        run: npm publish --provenance
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.version }}
           name: ${{ steps.version.outputs.version }}
           generate_release_notes: true
-
-      - name: Publish to npm
-        run: npm publish --provenance

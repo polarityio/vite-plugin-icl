@@ -1,22 +1,38 @@
 name: Release
 
 on:
-  pull_request:
+  push:
     branches: [main]
-    types: [closed]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
   release:
-    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - run: npm ci
+        env:
+          HUSKY: '0'
 
       - name: Get version
         id: version
         run: echo "version=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to npm
+        run: npm publish --provenance
 
       - name: Create release
         uses: softprops/action-gh-release@v2

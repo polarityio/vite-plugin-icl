@@ -670,7 +670,7 @@ export function transformComponentNames(options: PluginOptions): Plugin {
           hasChanges = true;
         }
 
-        const closeTagRegex = new RegExp(`</${simple}>`, 'g');
+        const closeTagRegex = new RegExp(`</${simple}\\s*>`, 'g');
         const newClose = transformedCode.replace(closeTagRegex, `</${unique}>`);
         if (newClose !== transformedCode) {
           transformedCode = newClose;

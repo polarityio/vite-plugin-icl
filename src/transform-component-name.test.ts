@@ -567,6 +567,106 @@ describe('transformComponentNames plugin', () => {
       });
     });
 
+    it('rewrites multi-line closing tags with newline before >', () => {
+      withTempDir((dir) => {
+        const registryPath = writeFile(
+          dir,
+          'registry.json',
+          JSON.stringify({
+            'data-grid': {
+              element: 'px-lib-data-grid-v1-0-0',
+              className: 'DataGrid',
+              package: '@acme/components',
+            },
+          }),
+        );
+        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryPath],
+        });
+        callBuildStart(plugin);
+
+        const file = path.join(dir, 'my-component.ts');
+        const result = callTransform(
+          plugin,
+          'export class MyComponentComponent {}\n<data-grid\n  >Content</data-grid\n>',
+          file,
+        ) as { code: string };
+
+        expect(result.code).toContain('</px-lib-data-grid-v1-0-0>');
+        expect(result.code).not.toContain('</data-grid');
+      });
+    });
+
+    it('rewrites multi-line closing tags with spaces/tabs before >', () => {
+      withTempDir((dir) => {
+        const registryPath = writeFile(
+          dir,
+          'registry.json',
+          JSON.stringify({
+            'data-grid': {
+              element: 'px-lib-data-grid-v1-0-0',
+              className: 'DataGrid',
+              package: '@acme/components',
+            },
+          }),
+        );
+        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryPath],
+        });
+        callBuildStart(plugin);
+
+        const file = path.join(dir, 'my-component.ts');
+        const result = callTransform(
+          plugin,
+          'export class MyComponentComponent {}\n<data-grid\n  >Content</data-grid \t >',
+          file,
+        ) as { code: string };
+
+        expect(result.code).toContain('</px-lib-data-grid-v1-0-0>');
+        expect(result.code).not.toContain('</data-grid');
+      });
+    });
+
+    it('rewrites multi-line closing tags inside tagged template literals', () => {
+      withTempDir((dir) => {
+        const registryPath = writeFile(
+          dir,
+          'registry.json',
+          JSON.stringify({
+            'data-grid': {
+              element: 'px-lib-data-grid-v1-0-0',
+              className: 'DataGrid',
+              package: '@acme/components',
+            },
+          }),
+        );
+        writeFile(dir, 'my-component.ts', 'export class MyComponentComponent {}');
+        const plugin = transformComponentNames({
+          componentsDir: dir,
+          componentRegistries: [registryPath],
+        });
+        callBuildStart(plugin);
+
+        const file = path.join(dir, 'my-component.ts');
+        const source = [
+          'export class MyComponentComponent {}',
+          'html`<data-grid',
+          '    slot="tab"',
+          '    ?active=${this._activeTab === "details"}',
+          '    >Details</data-grid',
+          '  >`',
+        ].join('\n');
+        const result = callTransform(plugin, source, file) as { code: string };
+
+        expect(result.code).toContain('</px-lib-data-grid-v1-0-0>');
+        expect(result.code).not.toContain('</data-grid');
+      });
+    });
+
     it('injects an import from the registry package field', () => {
       withTempDir((dir) => {
         const registryPath = writeFile(

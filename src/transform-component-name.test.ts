@@ -622,7 +622,7 @@ describe('transformComponentNames plugin', () => {
         const file = path.join(dir, 'my-component.ts');
         const result = callTransform(
           plugin,
-          'export class MyComponentComponent {}\n<data-grid\n  >Content</data-grid   >',
+          'export class MyComponentComponent {}\n<data-grid\n  >Content</data-grid \t >',
           file,
         ) as { code: string };
 

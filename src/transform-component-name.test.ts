@@ -9,6 +9,7 @@ import {
   isValidComponentFileName,
   filePathToComponentName,
   componentNameToClassName,
+  readProjectVersion,
   transformComponentNames,
   VIRTUAL_COMPONENTS_ID,
 } from './transform-component-name.js';
@@ -1766,6 +1767,90 @@ describe('transformComponentNames plugin', () => {
         expect(() => callBuildStart(plugin)).not.toThrow();
         const result = callTransform(plugin, src, file) as { code: string };
         expect(result.code).toMatch(/customElements\.get\('px-int-[a-z0-9]+-test-summary-/);
+      });
+    });
+  });
+
+  // ─── readProjectVersion ────────────────────────────────────────────────────
+
+  describe('readProjectVersion', () => {
+    let cwdSpy: ReturnType<typeof vi.spyOn> | undefined;
+
+    afterEach(() => {
+      cwdSpy?.mockRestore();
+      cwdSpy = undefined;
+    });
+
+    function withCwd(pkgJsonContents: string | null, fn: () => void): void {
+      withTempDir((rootDir) => {
+        if (pkgJsonContents !== null) {
+          fs.writeFileSync(path.join(rootDir, 'package.json'), pkgJsonContents);
+        }
+        cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(rootDir);
+        fn();
+      });
+    }
+
+    it("returns the version string from the consuming integration's package.json", () => {
+      withCwd(JSON.stringify({ name: 'my-integration', version: '3.2.1' }), () => {
+        expect(readProjectVersion()).toBe('3.2.1');
+      });
+    });
+
+    it('trims surrounding whitespace from the version value', () => {
+      withCwd(JSON.stringify({ version: '  2.5.0  ' }), () => {
+        expect(readProjectVersion()).toBe('2.5.0');
+      });
+    });
+
+    it("returns '1.0.0' when package.json is missing at cwd", () => {
+      withCwd(null, () => {
+        expect(readProjectVersion()).toBe('1.0.0');
+      });
+    });
+
+    it("returns '1.0.0' when package.json is malformed JSON", () => {
+      withCwd('{ not: valid json', () => {
+        expect(readProjectVersion()).toBe('1.0.0');
+      });
+    });
+
+    it("returns '1.0.0' when the version field is absent", () => {
+      withCwd(JSON.stringify({ name: 'no-version-here' }), () => {
+        expect(readProjectVersion()).toBe('1.0.0');
+      });
+    });
+
+    it("returns '1.0.0' when the version field is not a string", () => {
+      withCwd(JSON.stringify({ version: 42 }), () => {
+        expect(readProjectVersion()).toBe('1.0.0');
+      });
+    });
+
+    it("returns '1.0.0' when the version field is null", () => {
+      withCwd(JSON.stringify({ version: null }), () => {
+        expect(readProjectVersion()).toBe('1.0.0');
+      });
+    });
+
+    it("returns '1.0.0' when the version field is an empty string", () => {
+      withCwd(JSON.stringify({ version: '' }), () => {
+        expect(readProjectVersion()).toBe('1.0.0');
+      });
+    });
+
+    it("returns '1.0.0' when the version field contains only whitespace", () => {
+      withCwd(JSON.stringify({ version: '   ' }), () => {
+        expect(readProjectVersion()).toBe('1.0.0');
+      });
+    });
+
+    it('re-reads the file on every call (no caching)', () => {
+      withCwd(JSON.stringify({ version: '1.2.3' }), () => {
+        expect(readProjectVersion()).toBe('1.2.3');
+        const rootDir = process.cwd();
+        fs.writeFileSync(path.join(rootDir, 'package.json'), JSON.stringify({ version: '9.9.9' }));
+        expect(readProjectVersion()).toBe('9.9.9');
       });
     });
   });

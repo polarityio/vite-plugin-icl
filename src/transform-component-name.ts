@@ -158,7 +158,7 @@ function readProjectConfig(): IntegrationConfig {
  * Reads the `version` field from the consuming integration's `package.json`
  * at the project root.
  */
-function readProjectVersion(): string {
+export function readProjectVersion(): string {
   const pkgPath = path.resolve(process.cwd(), 'package.json');
   if (!existsSync(pkgPath)) return '1.0.0';
   try {

@@ -1774,7 +1774,7 @@ describe('transformComponentNames plugin', () => {
   // ─── readProjectVersion ────────────────────────────────────────────────────
 
   describe('readProjectVersion', () => {
-    let cwdSpy: ReturnType<typeof vi.spyOn> | undefined;
+    let cwdSpy: { mockRestore: () => void } | undefined;
 
     afterEach(() => {
       cwdSpy?.mockRestore();

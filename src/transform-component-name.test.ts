@@ -9,6 +9,7 @@ import {
   isValidComponentFileName,
   filePathToComponentName,
   componentNameToClassName,
+  sanitizeVersionForComponentName,
   readProjectVersion,
   transformComponentNames,
   VIRTUAL_COMPONENTS_ID,
@@ -240,6 +241,53 @@ describe('componentNameToClassName', () => {
 
   it('always appends the Component suffix', () => {
     expect(componentNameToClassName('my-widget')).toMatch(/Component$/);
+  });
+});
+
+// ─── sanitizeVersionForComponentName ─────────────────────────────────────────
+
+describe('sanitizeVersionForComponentName', () => {
+  it('replaces periods with hyphens for a plain semver version', () => {
+    expect(sanitizeVersionForComponentName('1.2.3')).toBe('1-2-3');
+  });
+
+  it('strips build metadata after a +', () => {
+    expect(sanitizeVersionForComponentName('1.2.3+build.456')).toBe('1-2-3');
+  });
+
+  it('strips build metadata even when it contains uppercase or invalid characters', () => {
+    expect(sanitizeVersionForComponentName('1.2.3+EXP.SHA.5114f85')).toBe('1-2-3');
+  });
+
+  it('lowercases uppercase pre-release identifiers', () => {
+    expect(sanitizeVersionForComponentName('1.0.0-RC1')).toBe('1-0-0-rc1');
+  });
+
+  it('handles combined build metadata and uppercase pre-release identifiers', () => {
+    expect(sanitizeVersionForComponentName('1.0.0-RC.1+EXP.SHA.5114f85')).toBe('1-0-0-rc-1');
+  });
+
+  it('replaces disallowed characters with a hyphen', () => {
+    expect(sanitizeVersionForComponentName('1.0.0_beta')).toBe('1-0-0-beta');
+  });
+
+  it('collapses consecutive hyphens produced by adjacent separators', () => {
+    expect(sanitizeVersionForComponentName('1.0.0--rc1')).toBe('1-0-0-rc1');
+  });
+
+  it('trims leading and trailing hyphens', () => {
+    expect(sanitizeVersionForComponentName('-1.0.0-')).toBe('1-0-0');
+  });
+
+  it('produces a result containing no periods or plus signs', () => {
+    const result = sanitizeVersionForComponentName('1.2.3-RC1+build.789');
+    expect(result).not.toContain('.');
+    expect(result).not.toContain('+');
+  });
+
+  it('produces an entirely lowercase result', () => {
+    const result = sanitizeVersionForComponentName('1.2.3-RC1+BUILD.789');
+    expect(result).toBe(result.toLowerCase());
   });
 });
 
@@ -1448,6 +1496,34 @@ describe('transformComponentNames plugin', () => {
         const match = result.code.match(/'(px-int-[^']+)'/);
         expect(match).not.toBeNull();
         expect(match![1]).toMatch(/^[^A-Z]+$/);
+      });
+    });
+
+    it('sanitizes a project version with build metadata and an uppercase pre-release tag', () => {
+      withTempDir((rootDir) => {
+        fs.writeFileSync(
+          path.join(rootDir, 'package.json'),
+          JSON.stringify({ version: '1.2.3-RC1+build.456' }),
+        );
+        const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(rootDir);
+        try {
+          withTempDir((dir) => {
+            const src = 'export class KeyValueComponent {}';
+            const file = writeFile(dir, 'key-value.ts', src);
+            const plugin = transformComponentNames({ componentsDir: dir });
+            callBuildStart(plugin);
+            const result = callTransform(plugin, src, file) as { code: string };
+            const match = result.code.match(/'(px-int-[^']+)'/);
+            expect(match).not.toBeNull();
+            const tagName = match![1];
+            expect(tagName).toContain('-v1-2-3-rc1');
+            expect(tagName).not.toContain('.');
+            expect(tagName).not.toContain('+');
+            expect(tagName).not.toMatch(/RC1/);
+          });
+        } finally {
+          cwdSpy.mockRestore();
+        }
       });
     });
   });

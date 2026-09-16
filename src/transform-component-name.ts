@@ -111,6 +111,16 @@ export function filePathToComponentName(relativePath: string): string {
   return withoutExt.replace(/\//g, '--').toLowerCase();
 }
 
+export function sanitizeVersionForComponentName(version: string): string {
+  return version
+    .replace(/\+.*$/, '')
+    .toLowerCase()
+    .replace(/\./g, '-')
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 /**
  * Converts a kebab-case custom element name to the expected PascalCase class
  * name with a `Component` suffix.
@@ -474,7 +484,7 @@ export function transformComponentNames(options: PluginOptions): Plugin {
       resolvedLibraryMap.clear();
 
       // Resolve the consuming integration's version at build time.
-      versionSlug = `v${readProjectVersion().replace(/\./g, '-')}`;
+      versionSlug = `v${sanitizeVersionForComponentName(readProjectVersion())}`;
 
       const projectConfig = readProjectConfig();
       const basePrefix = `px-int-${hash}-${resolveAcronym(projectConfig)}`;
@@ -622,7 +632,7 @@ export function transformComponentNames(options: PluginOptions): Plugin {
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const libPkg: { version?: string } = JSON.parse(readFileSync(libPkgPath, 'utf-8'));
             const libVersion = libPkg.version ?? '0.0.0';
-            const normalizedVersion = libVersion.replace(/\./g, '-');
+            const normalizedVersion = sanitizeVersionForComponentName(libVersion);
             for (const [shortName, { className }] of Object.entries(mergedDefs)) {
               const resolvedTagName = `px-lib-${shortName.toLowerCase()}-v${normalizedVersion}`;
               componentMap[shortName] = resolvedTagName;

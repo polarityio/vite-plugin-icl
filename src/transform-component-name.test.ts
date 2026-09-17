@@ -9,6 +9,8 @@ import {
   isValidComponentFileName,
   filePathToComponentName,
   componentNameToClassName,
+  sanitizeVersionForComponentName,
+  readProjectVersion,
   transformComponentNames,
   VIRTUAL_COMPONENTS_ID,
 } from './transform-component-name.js';
@@ -239,6 +241,53 @@ describe('componentNameToClassName', () => {
 
   it('always appends the Component suffix', () => {
     expect(componentNameToClassName('my-widget')).toMatch(/Component$/);
+  });
+});
+
+// ─── sanitizeVersionForComponentName ─────────────────────────────────────────
+
+describe('sanitizeVersionForComponentName', () => {
+  it('replaces periods with hyphens for a plain semver version', () => {
+    expect(sanitizeVersionForComponentName('1.2.3')).toBe('1-2-3');
+  });
+
+  it('strips build metadata after a +', () => {
+    expect(sanitizeVersionForComponentName('1.2.3+build.456')).toBe('1-2-3');
+  });
+
+  it('strips build metadata even when it contains uppercase or invalid characters', () => {
+    expect(sanitizeVersionForComponentName('1.2.3+EXP.SHA.5114f85')).toBe('1-2-3');
+  });
+
+  it('lowercases uppercase pre-release identifiers', () => {
+    expect(sanitizeVersionForComponentName('1.0.0-RC1')).toBe('1-0-0-rc1');
+  });
+
+  it('handles combined build metadata and uppercase pre-release identifiers', () => {
+    expect(sanitizeVersionForComponentName('1.0.0-RC.1+EXP.SHA.5114f85')).toBe('1-0-0-rc-1');
+  });
+
+  it('replaces disallowed characters with a hyphen', () => {
+    expect(sanitizeVersionForComponentName('1.0.0_beta')).toBe('1-0-0-beta');
+  });
+
+  it('collapses consecutive hyphens produced by adjacent separators', () => {
+    expect(sanitizeVersionForComponentName('1.0.0--rc1')).toBe('1-0-0-rc1');
+  });
+
+  it('trims leading and trailing hyphens', () => {
+    expect(sanitizeVersionForComponentName('-1.0.0-')).toBe('1-0-0');
+  });
+
+  it('produces a result containing no periods or plus signs', () => {
+    const result = sanitizeVersionForComponentName('1.2.3-RC1+build.789');
+    expect(result).not.toContain('.');
+    expect(result).not.toContain('+');
+  });
+
+  it('produces an entirely lowercase result', () => {
+    const result = sanitizeVersionForComponentName('1.2.3-RC1+BUILD.789');
+    expect(result).toBe(result.toLowerCase());
   });
 });
 
@@ -1449,6 +1498,34 @@ describe('transformComponentNames plugin', () => {
         expect(match![1]).toMatch(/^[^A-Z]+$/);
       });
     });
+
+    it('sanitizes a project version with build metadata and an uppercase pre-release tag', () => {
+      withTempDir((rootDir) => {
+        fs.writeFileSync(
+          path.join(rootDir, 'package.json'),
+          JSON.stringify({ version: '1.2.3-RC1+build.456' }),
+        );
+        const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(rootDir);
+        try {
+          withTempDir((dir) => {
+            const src = 'export class KeyValueComponent {}';
+            const file = writeFile(dir, 'key-value.ts', src);
+            const plugin = transformComponentNames({ componentsDir: dir });
+            callBuildStart(plugin);
+            const result = callTransform(plugin, src, file) as { code: string };
+            const match = result.code.match(/'(px-int-[^']+)'/);
+            expect(match).not.toBeNull();
+            const tagName = match![1];
+            expect(tagName).toContain('-v1-2-3-rc1');
+            expect(tagName).not.toContain('.');
+            expect(tagName).not.toContain('+');
+            expect(tagName).not.toMatch(/RC1/);
+          });
+        } finally {
+          cwdSpy.mockRestore();
+        }
+      });
+    });
   });
 
   // ─── VIRTUAL_COMPONENTS_ID constant ───────────────────────────────────────
@@ -1766,6 +1843,90 @@ describe('transformComponentNames plugin', () => {
         expect(() => callBuildStart(plugin)).not.toThrow();
         const result = callTransform(plugin, src, file) as { code: string };
         expect(result.code).toMatch(/customElements\.get\('px-int-[a-z0-9]+-test-summary-/);
+      });
+    });
+  });
+
+  // ─── readProjectVersion ────────────────────────────────────────────────────
+
+  describe('readProjectVersion', () => {
+    let cwdSpy: { mockRestore: () => void } | undefined;
+
+    afterEach(() => {
+      cwdSpy?.mockRestore();
+      cwdSpy = undefined;
+    });
+
+    function withCwd(pkgJsonContents: string | null, fn: () => void): void {
+      withTempDir((rootDir) => {
+        if (pkgJsonContents !== null) {
+          fs.writeFileSync(path.join(rootDir, 'package.json'), pkgJsonContents);
+        }
+        cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(rootDir);
+        fn();
+      });
+    }
+
+    it("returns the version string from the consuming integration's package.json", () => {
+      withCwd(JSON.stringify({ name: 'my-integration', version: '3.2.1' }), () => {
+        expect(readProjectVersion()).toBe('3.2.1');
+      });
+    });
+
+    it('trims surrounding whitespace from the version value', () => {
+      withCwd(JSON.stringify({ version: '  2.5.0  ' }), () => {
+        expect(readProjectVersion()).toBe('2.5.0');
+      });
+    });
+
+    it("returns '1.0.0' when package.json is missing at cwd", () => {
+      withCwd(null, () => {
+        expect(readProjectVersion()).toBe('1.0.0');
+      });
+    });
+
+    it("returns '1.0.0' when package.json is malformed JSON", () => {
+      withCwd('{ not: valid json', () => {
+        expect(readProjectVersion()).toBe('1.0.0');
+      });
+    });
+
+    it("returns '1.0.0' when the version field is absent", () => {
+      withCwd(JSON.stringify({ name: 'no-version-here' }), () => {
+        expect(readProjectVersion()).toBe('1.0.0');
+      });
+    });
+
+    it("returns '1.0.0' when the version field is not a string", () => {
+      withCwd(JSON.stringify({ version: 42 }), () => {
+        expect(readProjectVersion()).toBe('1.0.0');
+      });
+    });
+
+    it("returns '1.0.0' when the version field is null", () => {
+      withCwd(JSON.stringify({ version: null }), () => {
+        expect(readProjectVersion()).toBe('1.0.0');
+      });
+    });
+
+    it("returns '1.0.0' when the version field is an empty string", () => {
+      withCwd(JSON.stringify({ version: '' }), () => {
+        expect(readProjectVersion()).toBe('1.0.0');
+      });
+    });
+
+    it("returns '1.0.0' when the version field contains only whitespace", () => {
+      withCwd(JSON.stringify({ version: '   ' }), () => {
+        expect(readProjectVersion()).toBe('1.0.0');
+      });
+    });
+
+    it('re-reads the file on every call (no caching)', () => {
+      withCwd(JSON.stringify({ version: '1.2.3' }), () => {
+        expect(readProjectVersion()).toBe('1.2.3');
+        const rootDir = process.cwd();
+        fs.writeFileSync(path.join(rootDir, 'package.json'), JSON.stringify({ version: '9.9.9' }));
+        expect(readProjectVersion()).toBe('9.9.9');
       });
     });
   });

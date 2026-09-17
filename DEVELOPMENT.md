@@ -94,7 +94,7 @@ px-int-{hash}-{acronym}-{component-name}-{version}
 | `{hash}` | Base-36 encoded UUID generated once per plugin instantiation via `convertUUIDToBase36(randomUUID())` |
 | `{acronym}` | Lowercased value of `acronym` from `config/config.json`, defaulting to `icl` |
 | `{component-name}` | Derived from the file path relative to `componentsDir` (see below) |
-| `{version}` | `version` from `package.json` with dots replaced by dashes, prefixed with `v` (e.g. `v1-0-0`) |
+| `{version}` | `version` from the consuming integration's `package.json` (resolved via `readProjectVersion()` from `process.cwd()`) |
 
 The hash is stable within a single build but changes between builds, ensuring that two separately built integrations loaded on the same page never collide.
 

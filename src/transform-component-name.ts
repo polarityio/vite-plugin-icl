@@ -111,6 +111,16 @@ export function filePathToComponentName(relativePath: string): string {
   return withoutExt.replace(/\//g, '--').toLowerCase();
 }
 
+export function sanitizeVersionForComponentName(version: string): string {
+  return version
+    .replace(/\+.*$/, '')
+    .toLowerCase()
+    .replace(/\./g, '-')
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 /**
  * Converts a kebab-case custom element name to the expected PascalCase class
  * name with a `Component` suffix.
@@ -152,6 +162,24 @@ function readProjectConfig(): IntegrationConfig {
   } catch {
     return {};
   }
+}
+
+/**
+ * Reads the `version` field from the consuming integration's `package.json`
+ * at the project root.
+ */
+export function readProjectVersion(): string {
+  const pkgPath = path.resolve(process.cwd(), 'package.json');
+  if (!existsSync(pkgPath)) return '1.0.0';
+  try {
+    const parsed = JSON.parse(readFileSync(pkgPath, 'utf-8')) as { version?: unknown };
+    if (typeof parsed.version === 'string' && parsed.version.trim().length > 0) {
+      return parsed.version.trim();
+    }
+  } catch {
+    // fall through to default
+  }
+  return '1.0.0';
 }
 
 /**
@@ -417,8 +445,7 @@ export function transformComponentNames(options: PluginOptions): Plugin {
 
   // ── Build-time state (populated in buildStart) ───────────────────────────
   const hash = convertUUIDToBase36(randomUUID());
-  const version: string = pkg.version ?? '1.0.0';
-  const versionSlug = `v${version.replace(/\./g, '-')}`;
+  let versionSlug = '';
 
   // componentMap: derived name → unique tag name
   const componentMap: Record<string, string> = {};
@@ -455,6 +482,9 @@ export function transformComponentNames(options: PluginOptions): Plugin {
       }
       fileComponentMap.clear();
       resolvedLibraryMap.clear();
+
+      // Resolve the consuming integration's version at build time.
+      versionSlug = `v${sanitizeVersionForComponentName(readProjectVersion())}`;
 
       const projectConfig = readProjectConfig();
       const basePrefix = `px-int-${hash}-${resolveAcronym(projectConfig)}`;
@@ -602,7 +632,7 @@ export function transformComponentNames(options: PluginOptions): Plugin {
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const libPkg: { version?: string } = JSON.parse(readFileSync(libPkgPath, 'utf-8'));
             const libVersion = libPkg.version ?? '0.0.0';
-            const normalizedVersion = libVersion.replace(/\./g, '-');
+            const normalizedVersion = sanitizeVersionForComponentName(libVersion);
             for (const [shortName, { className }] of Object.entries(mergedDefs)) {
               const resolvedTagName = `px-lib-${shortName.toLowerCase()}-v${normalizedVersion}`;
               componentMap[shortName] = resolvedTagName;
